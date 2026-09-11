@@ -186,18 +186,34 @@ class Manager:
             result.append(item)
         return result
 
+    def unique_environment_name(self, requested):
+        """Allocate a name inside the creation transaction; compare without case."""
+        base = requested.strip()
+        occupied = {row[0].strip().casefold() for row in self.db.execute('SELECT name FROM environments')}
+        if base.casefold() not in occupied:
+            return base
+        number = 2
+        while True:
+            suffix = f' ({number})'
+            candidate = base[:80-len(suffix)].rstrip() + suffix
+            if candidate.casefold() not in occupied:
+                return candidate
+            number += 1
+
     def create_environment(self, inp):
         self.account(inp.account_id)
         eid = uuid.uuid4().hex
         with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            name = self.unique_environment_name(inp.name)
             self.db.execute('INSERT INTO environments (id,name,note,start_url,extension_enabled,created_at,account_id,mode) VALUES (?,?,?,?,?,?,?,?)',
-                (eid, inp.name, inp.note, inp.start_url, 0, now(), inp.account_id, inp.mode))
-        self.log(eid, '创建环境：' + inp.name)
+                (eid, name, inp.note, inp.start_url, 0, now(), inp.account_id, inp.mode))
+        self.log(eid, '创建环境：' + name)
         return eid
 
     def snapshot(self):
         result = []
-        for row in self.db.execute('SELECT * FROM environments ORDER BY created_at ASC, rowid ASC'):
+        for row in self.db.execute('SELECT * FROM environments ORDER BY created_at DESC, rowid DESC'):
             item = dict(row)
             eid = item['id']
             item.pop('password_cipher', None)
