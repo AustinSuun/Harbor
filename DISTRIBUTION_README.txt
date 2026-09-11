@@ -1,4 +1,4 @@
-Harbor v0.3.4 预览版 · Windows x64
+Harbor v0.3.5 预览版 · Windows x64
 
 1. 完整解压 ZIP，双击 Harbor.exe。保留同目录的 _internal 文件夹。
 2. 默认进入账号管理，添加邮箱和密码。

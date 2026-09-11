@@ -14,14 +14,15 @@ PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动�
 REFERENCE_IMAGE_URL = 'https://cdn.jsdelivr.net/gh/AustinSuun/image/img/20260911135653908.png'
 RECREATE_PROMPT = REFERENCE_IMAGE_URL + '\n\n用纯 HTML + CSS 复刻这张图，不许用图片，不许用 SVG。'
 STICKMAN_PROMPT = '请使用纯 SVG 和原生 SMIL 动画（或纯 CSS），制作一个"火柴人大战"的完整 2D 动态页面。'
-TASK_PROMPTS = {'pelican': PROMPT, 'recreate': RECREATE_PROMPT, 'stickman': STICKMAN_PROMPT}
+QUICK_PELICAN_PROMPT = '这是一个编码能力测试，不是分析或规划测试。本题不允许思考、分析、规划或讨论方案，请看到需求后立即开始创建文件、编写代码。\n\n任务：创建一个 HTML，内容是用 SVG 绘制“鹈鹕骑自行车”的 2D 动画。\n\n执行要求：\n\n1. 第一项操作立即调用 functions.write_file，在 /home/user/index.html 中直接写入完整 HTML 代码，不要先输出任何文字。\n2. 不要检查目录、读取文件、搜索、安装依赖、执行命令、测试、截图或验证。\n3. 不要询问问题，所有细节自行决定，直接编码。\n4. HTML、CSS、SVG 和 JavaScript 全部内联，不使用外部资源。鹈鹕须有明显的长嘴与喉囊，动画包含车轮旋转和双腿踩踏。\n5. 写入完成后立即调用 functions.present_file 打开 /home/user/index.html，然后结束，不追加解释。\n\n注意：这是编码能力测试，不允许先进入 Thinking 或输出思考过程。现在立即调用文件写入工具，开始编码。'
+TASK_PROMPTS = {'pelican_quick': QUICK_PELICAN_PROMPT, 'pelican': PROMPT, 'recreate': RECREATE_PROMPT, 'stickman': STICKMAN_PROMPT}
 URL = 'https://arena.ai/agent'
 USER = '[data-message-role="user"], [data-message-author-role="user"], [data-role="user"]'
 ACTIVE = {'running', 'stopping'}
 
 
 class TaskSettings(BaseModel):
-    kind: Literal["pelican","recreate","stickman"] = "pelican"
+    kind: Literal["pelican","recreate","stickman","pelican_quick"] = "pelican"
     capture_screenshot: bool = True
     total: int = Field(default=5, ge=1, le=50)
     interval: float = Field(default=15, ge=3, le=3600, allow_inf_nan=False)
