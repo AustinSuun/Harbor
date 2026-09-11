@@ -141,7 +141,7 @@ class PelicanTasks:
                 'started_at': run['started_at'], 'finished_at': run.get('finished_at'),
                 'jobs': [{k:v for k,v in j.items() if k not in ('turns','raw_text','events','analysis') and not k.startswith('_')} for j in jobs], 'success': sum(j['status']=='success' for j in jobs),
                 'failed': sum(j['status'] in ('failed',) for j in jobs),
-                'finished': sum(j['status']=='success' for j in jobs),
+                'finished': sum(j['status']=='success' or bool(j.get('page_closed')) for j in jobs),
                 'submitted': sum(bool(j.get('submitted')) for j in jobs),
                 'untracked': sum(j['status']=='untracked' for j in jobs),
                 'unknown': sum(j['status']=='unknown' for j in jobs),
@@ -167,7 +167,7 @@ class PelicanTasks:
                    'started_at':datetime.now(timezone.utc).isoformat(), 'stop':asyncio.Event(),
                    'environment_id':eid,'environment_name':self.manager.get(eid)['name'],
                    'jobs':[{'record_id':uuid.uuid4().hex,'number':i+1,'status':'pending','message':'等待执行','url':'','turns':[dict(t,status='pending',raw_text='') for t in prompts[i]]} for i in range(settings.total)],
-                   'context':context, 'workers':[], 'next':0, 'opening_gate':asyncio.Lock(), 'last_open':0.0}
+                   'context':context, 'workers':[], 'next':0, 'opening_gate':asyncio.Lock(), 'last_open':0.0, 'open_not_before':0.0}
             self.history.save_run(run)
             self.runs[eid] = run
             run['task'] = asyncio.create_task(self.execute(eid,run))
@@ -238,20 +238,74 @@ class PelicanTasks:
             for job in run['jobs']: self.history.cache.pop(job['record_id'],None)
             self.manager.log(eid, '任务结束：' + run['status'] + '；已打开的标签页保留')
 
+    async def wait_open_slot(self, run):
+        # Recompute after every wait: another worker may close a page meanwhile.
+        while True:
+            self.checkpoint(run)
+            deadline = max(run['last_open'] + run['settings']['interval'],
+                           run.get('open_not_before', 0.0))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            await self.pause(run, remaining)
+
+    def can_refill_after_close(self, eid, run, page, page_closed):
+        return (page is not None and (page_closed or page.is_closed())
+                and not run['stop'].is_set()
+                and self.manager.contexts.get(eid) is run['context']
+                and any(not p.is_closed() for p in run['context'].pages))
+
+    def record_page_closed(self, eid, run, job, attempted, submitted):
+        # Keep captured output and the consumed job number; never resend this job.
+        if job['status'] == 'success':
+            return
+        closed_at = time.monotonic()
+        run['open_not_before'] = max(run.get('open_not_before', 0.0),
+                                     closed_at + run['settings']['interval'])
+        if attempted:
+            self.last_send[eid] = closed_at
+        status = 'untracked' if submitted else ('unknown' if attempted else 'cancelled')
+        message = ('已发送但标签页已关闭，停止跟踪；' if submitted else
+                   '发送结果不确定，标签页已关闭；' if attempted else '标签页已关闭，本题未发送；')
+        message += '已释放名额，该题不重发，后续任务按间隔继续'
+        job.update(status=status, page_closed=True,
+                   closed_at=datetime.now(timezone.utc).isoformat(), message=message)
+        if job.get('current_turn'):
+            job['turns'][job['current_turn']-1]['status'] = status
+        self.manager.log(eid, f'任务 #{job["number"]}：{message}')
+
     async def worker(self, eid, run):
         while not run['stop'].is_set() and run['next']<len(run['jobs']):
             job=run['jobs'][run['next']]
             run['next']+=1
             page=None
+            page_closed=False
+            close_handler=None
+            close_cancel_requested=False
+            owner=asyncio.current_task()
             attempted=False
             submitted=False
             try:
                 async with run['opening_gate']:
                     job.update(status='waiting',message='等待开页间隔')
-                    await self.pause(run,run['settings']['interval']-(time.monotonic()-run['last_open']))
+                    await self.wait_open_slot(run)
                     self.checkpoint(run)
                     page=await run['context'].new_page()
                     run['last_open']=time.monotonic()
+                def close_handler(*_):
+                    nonlocal page_closed, close_cancel_requested
+                    if page_closed:
+                        return
+                    page_closed = True
+                    if not run['stop'].is_set() and job['status'] != 'success':
+                        run['open_not_before'] = max(run.get('open_not_before', 0.0),
+                            time.monotonic() + run['settings']['interval'])
+                    if not owner.done():
+                        close_cancel_requested = True
+                        owner.cancel()
+                page.on('close', close_handler)
+                if page.is_closed():
+                    close_handler()
                 job.update(status='opening',message='打开 Arena，等待页面加载')
                 self.history.save_run(run)
                 await page.goto(URL,wait_until='domcontentloaded',timeout=45000)
@@ -303,6 +357,18 @@ class PelicanTasks:
                     await self.history.screenshot(run,job,page)
                 self.manager.log(eid,f'任务 #{job["number"]}：{job["message"]}')
             except asyncio.CancelledError:
+                if self.can_refill_after_close(eid, run, page, page_closed):
+                    self.record_page_closed(eid, run, job, attempted, submitted)
+                    # Python 3.11+ retains a cancellation count after it is caught.
+                    if close_cancel_requested and hasattr(owner, 'uncancel'):
+                        owner.uncancel()
+                    continue
+                if page_closed and not run['stop'].is_set():
+                    # No live page/context remains: this is an environment shutdown.
+                    run['stop'].set()
+                    for other in run['workers']:
+                        if other is not owner:
+                            other.cancel()
                 # Cancellation while saving a screenshot must not undo a finished result.
                 if job['status']=='success':
                     return
@@ -312,6 +378,12 @@ class PelicanTasks:
                     job['turns'][job['current_turn']-1]['status']=job['status']
                 return
             except Exception as exc:
+                # Playwright's closed-page error can arrive before its close callback.
+                if self.can_refill_after_close(eid, run, page, page_closed):
+                    self.record_page_closed(eid, run, job, attempted, submitted)
+                    if close_cancel_requested and hasattr(owner, 'uncancel'):
+                        owner.uncancel()
+                    continue
                 if attempted: self.last_send[eid]=time.monotonic()
                 message=('已发送，无法确认完成；' if submitted else ('发送不确定，不重试；' if attempted else '未确认发送；'))+str(exc)[:600]
                 job.update(status='untracked' if submitted else ('unknown' if attempted else 'failed'),message=message)
@@ -325,6 +397,9 @@ class PelicanTasks:
                     await self.history.screenshot(run,job,page)
                 return
             finally:
+                # Completed/old tabs must never cancel a worker processing a new job.
+                if page is not None and close_handler is not None:
+                    page.remove_listener('close', close_handler)
                 self.history.save_run(run)
 
     async def wait_reply(self, page, run, job, baseline, seen_generating):
@@ -363,7 +438,7 @@ class PelicanTasks:
                     return
             previous=signature
             if time.monotonic()-began>=900:
-                job.update(status='attention',message='15 分钟未确认回复完成；保留并发名额，请检查页面。可停止本轮，不会自动补发')
+                job.update(status='attention',message='15 分钟未确认回复完成；可关闭此任务标签释放名额并继续后续任务，或停止本轮；本题不重发')
             elif candidate:
                 job.update(status='generating',message='生成信号已结束，等待输出稳定 30 秒；仍占用名额')
             else:
