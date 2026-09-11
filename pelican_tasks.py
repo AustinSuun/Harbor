@@ -13,13 +13,15 @@ from fastapi import HTTPException
 PROMPT = '创建一个HTML，内容是SVG绘制一个鹈鹕骑自行车的2D动画，你不需要任何测试'
 REFERENCE_IMAGE_URL = 'https://cdn.jsdelivr.net/gh/AustinSuun/image/img/20260911135653908.png'
 RECREATE_PROMPT = REFERENCE_IMAGE_URL + '\n\n用纯 HTML + CSS 复刻这张图，不许用图片，不许用 SVG。'
+STICKMAN_PROMPT = '请使用纯 SVG 和原生 SMIL 动画（或纯 CSS），制作一个"火柴人大战"的完整 2D 动态页面。'
+TASK_PROMPTS = {'pelican': PROMPT, 'recreate': RECREATE_PROMPT, 'stickman': STICKMAN_PROMPT}
 URL = 'https://arena.ai/agent'
 USER = '[data-message-role="user"], [data-message-author-role="user"], [data-role="user"]'
 ACTIVE = {'running', 'stopping'}
 
 
 class TaskSettings(BaseModel):
-    kind: Literal["pelican","recreate"] = "pelican"
+    kind: Literal["pelican","recreate","stickman"] = "pelican"
     capture_screenshot: bool = True
     total: int = Field(default=5, ge=1, le=50)
     interval: float = Field(default=15, ge=3, le=3600, allow_inf_nan=False)
@@ -127,7 +129,7 @@ class PelicanTasks:
         import json
         row = self.manager.db.execute('SELECT settings FROM pelican_settings WHERE environment_id=?', (eid,)).fetchone()
         config=json.loads(row[0]) if row else TaskSettings().model_dump(exclude={'confirmed'})
-        if config.get('kind') not in ('pelican','recreate'):
+        if config.get('kind') not in TASK_PROMPTS:
             config['kind']='pelican'  # Retired task settings must not break the selector.
         config.pop('stop_on_thinking',None)
         return config
@@ -160,7 +162,7 @@ class PelicanTasks:
                 # The UI confirmation explicitly warns about prior uncertain sends.
                 self.manager.log(eid, '用户确认开始新一轮；上一轮不确定发送不自动重试')
             config = settings.model_dump(exclude={'confirmed'})
-            prompts=[[{'prompt':RECREATE_PROMPT if settings.kind=='recreate' else PROMPT}] for _ in range(settings.total)]
+            prompts=[[{'prompt':TASK_PROMPTS[settings.kind]}] for _ in range(settings.total)]
             with self.manager.db:
                 self.manager.db.execute('INSERT OR REPLACE INTO pelican_settings VALUES (?,?)', (eid,json.dumps(config)))
             run = {'id': uuid.uuid4().hex, 'status':'running', 'settings':config,
@@ -417,7 +419,7 @@ class PelicanTasks:
             turn=job['turns'][job['current_turn']-1]
             is_new_response=(state['count']>baseline['count'] or
                 bool(state.get('key') and state['key']!=baseline.get('key')))
-            if run['settings']['kind'] in ('pelican','recreate'):
+            if run['settings']['kind'] in TASK_PROMPTS:
                 is_new_response=is_new_response or state['text']!=baseline['text']
             if is_new_response:
                 captured=await page.evaluate(READ_OUTPUT)

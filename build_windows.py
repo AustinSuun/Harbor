@@ -123,7 +123,7 @@ def main():
     # Record package versions, but not usernames, machine paths or account data.
     versions=json.loads(subprocess.check_output([str(python),'-c',
         "import importlib.metadata as m,json; print(json.dumps({n:m.version(n) for n in ['playwright','fastapi','uvicorn','pydantic','pyinstaller']}))"],text=True))
-    manifest={'application':'Harbor','application_version':'0.3.2','platform':'Windows x64','created_at':stamp,
+    manifest={'application':'Harbor','application_version':'0.3.3','platform':'Windows x64','created_at':stamp,
               'dependencies':versions,'browser_folders':[p.name for p in bundle.iterdir()],
               'native_libraries':[p.name for p in native_dlls],
               'plugins':False,'user_data_included':False,'runtime_validated':False,
