@@ -1,0 +1,38 @@
+# Private data and runtime output
+/data/
+/logs/
+/results/
+/task-artifacts/
+/profiles/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+# Packaging and dependencies
+/.packaging/
+/.packaging-venv/
+/release/
+/.venv/
+/venv/
+/node_modules/
+/build/
+/dist/
+*.spec
+*.zip
+# Local caches and editor settings
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

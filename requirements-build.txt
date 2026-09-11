@@ -1,0 +1,6 @@
+# Isolated Windows packaging environment; matched to the current working runtime.
+playwright==1.62.0
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+pyinstaller>=6.12,<7
