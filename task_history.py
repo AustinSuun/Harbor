@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
+import asyncio
+from html_results import HtmlResults, collect_html, TaskHtmlCapture
 
 TERMINAL={'success','archived','archive_failed','failed','unknown','untracked','cancelled','interrupted','parse_failed'}
 
@@ -26,6 +28,7 @@ class History:
         self.manager=manager
         self.artifacts=None
         self.cache={}
+        self.html=HtmlResults(self)
 
     def initialize(self):
         database=Path(self.manager.db.execute('PRAGMA database_list').fetchone()[2])
@@ -51,10 +54,42 @@ class History:
                     self.manager.db.execute('UPDATE task_records SET status=?,payload=?,updated_at=? WHERE id=?',
                                             ('interrupted',json.dumps(data,ensure_ascii=False),timestamp(),row['id']))
 
+        self.html.initialize()
+
+    def account_snapshot(self,eid):
+        row=self.manager.db.execute('SELECT a.id,a.name,a.login_email FROM accounts a JOIN environments e ON e.account_id=a.id WHERE e.id=?',(eid,)).fetchone()
+        return {'id':row['id'],'name':row['name'],'email':row['login_email']} if row else {}
+
+    def begin_html_capture(self,page):
+        return TaskHtmlCapture(page)
+
+    async def capture_html(self,run,job,page):
+        if self.html.pruned(job['record_id']):return
+        try:
+            async def collect():
+                observer=job.get('_html_capture')
+                found=await observer.result() if observer else None
+                return found or await collect_html(page,job)
+            content,source=await asyncio.wait_for(collect(),timeout=20)
+            if content:
+                saved=self.html.save(run,job,content,source)
+                job['html_capture']='saved' if saved else 'not_saved'
+                if saved:
+                    from artifact_metrics import candidate_summary
+                    job['html_candidate']=candidate_summary(content,complete_validated=True,kind=run['settings'].get('kind','pelican'))
+            else:job['html_capture']='未取得完整 HTML 源文件；未加入陈列'
+        except Exception:
+            job['html_capture']='HTML 保存失败；原始任务记录保留'
+        self.save_job(run,job)
+
     def save_job(self,run,job):
         rid=job['record_id']
+        if self.html.pruned(rid):
+            job['result_deleted']=True
+            return
         public={k:v for k,v in job.items() if not k.startswith('_')}
         public['settings']=run['settings']
+        public['account_snapshot']=run.get('account_snapshot',{})
         payload=json.dumps(public,ensure_ascii=False)
         if self.cache.get(rid)==payload:
             return
@@ -86,6 +121,7 @@ class History:
         data['manual_answers']=json.loads(data['manual_answers'])
         data['analysis']=json.loads(data['analysis']) if data['analysis'] else data['payload'].get('analysis')
         data['starred']=bool(data['starred'])
+        data['html_result']=self.html.metadata(rid)
         return data
 
     def list(self,q='',rating='',starred=False,kind='',environment_id='',page=1):
@@ -111,11 +147,14 @@ class History:
         return self.get(rid)
 
     async def screenshot(self,run,job,page):
-        if page is None or page.is_closed() or not job.get('submitted'):
+        if self.html.pruned(job['record_id']) or page is None or page.is_closed() or not job.get('submitted'):
             return
         name=job['record_id']+'.png'
         try:
             await page.screenshot(path=str(self.artifacts/name),full_page=False,timeout=5000)
+            if self.html.pruned(job['record_id']):
+                (self.artifacts/name).unlink(missing_ok=True)
+                return
             with self.manager.db:
                 self.manager.db.execute('UPDATE task_records SET screenshot=? WHERE id=?',(name,job['record_id']))
         except Exception as exc:

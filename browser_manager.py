@@ -15,7 +15,10 @@ import uuid
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
+from html_results import preview_html
+import yescaptcha_support
+import re
 from task_history import ReviewInput
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from fastapi.exceptions import RequestValidationError
@@ -24,10 +27,13 @@ from manager_login import login as arena_login, confirmed as login_confirmed, pr
 from runtime_paths import RESOURCE_DIR, DATA_DIR, FROZEN, ensure_browser_resources
 from playwright.async_api import async_playwright
 from pelican_tasks import PelicanTasks, TaskSettings
+from app_version import VERSION
+from update_service import Updates
 
 BASE = RESOURCE_DIR
 DATA = DATA_DIR
 MAX_RUNNING = 6
+updates = Updates(DATA)
 
 
 def now():
@@ -64,6 +70,11 @@ class AccountInput(BaseModel):
         return value
 
 
+class YesCaptchaInput(BaseModel):
+    enabled: bool = False
+    folder: str = Field(default='', max_length=2048)
+
+
 class ManualLoginInput(BaseModel):
     confirmed: bool = False
     email: str = Field(min_length=1, max_length=254)
@@ -98,6 +109,7 @@ class EnvironmentInput(BaseModel):
 class Manager:
     def __init__(self):
         self.contexts = {}
+        self.yescaptcha_started = {}
         self.browsers = {}
         self.login_jobs = {}
         self.auth_watch_jobs = {}
@@ -115,6 +127,7 @@ class Manager:
         self.db = None
         self.pw = None
         self.shutting_down = False
+        self.updating = False
         self.guard = None
 
     def log(self, eid, message):
@@ -159,6 +172,7 @@ class Manager:
         # Legacy profiles are not reused or deleted by migration.
         self.db.execute('UPDATE environments SET extension_enabled=0 WHERE extension_enabled<>0')
         self.db.commit()
+        yescaptcha_support.initialize(self.db, DATA / 'migration-backups')
 
     def get(self, eid):
         row = self.db.execute('SELECT * FROM environments WHERE id=?', (eid,)).fetchone()
@@ -223,7 +237,9 @@ class Manager:
             item['login_email'] = account.get('login_email', '')
             item['auth_status'] = self.auth_states.get(eid, 'not_logged_in')
             item['auth_detail'] = self.auth_evidence.get(eid, {})
-            item.pop('extension_enabled',None)  # Legacy DB column is not a feature.
+            item.pop('extension_enabled',None)  # Legacy column remains unrelated.
+            item['yescaptcha'] = yescaptcha_support.read_settings(self.db, eid)
+            item['yescaptcha']['runtime'] = ('requested_on_launch' if self.yescaptcha_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
             item['task'] = pelican.snapshot(eid)
             item.update(status=self.states.get(eid, 'stopped'), error=self.errors.get(eid, ''), profile_path=str(DATA / 'session-profiles' / eid) if item['mode']=='persistent' else '')
             result.append(item)
@@ -312,6 +328,7 @@ class Manager:
     async def launch(self, eid):
         async with self.lock:
             item = self.get(eid)
+            if self.updating:raise HTTPException(409, '正在安装更新，暂不能启动环境')
             if eid in self.discard_pending:
                 raise HTTPException(409, '此临时环境正在丢弃，请从账号管理新建环境')
             if eid in self.contexts:
@@ -325,12 +342,14 @@ class Manager:
                 account = self.account_for(eid)
                 if not account['login_email'] or not account['password_cipher']:
                     raise CredentialError('请先在账号管理中保存 Arena 邮箱和密码。')
+                extension = yescaptcha_support.read_settings(self.db, eid)
+                extension_args = yescaptcha_support.launch_args(item['mode'], extension['enabled'], extension['folder'])
                 if item['mode'] == 'persistent':
                     profile = DATA / 'session-profiles' / eid
                     profile.mkdir(parents=True, exist_ok=True)
                     context = await self.pw.chromium.launch_persistent_context(
                         user_data_dir=str(profile), channel='chromium', headless=False,
-                        no_viewport=True, args=['--disable-extensions'], timeout=45000)
+                        no_viewport=True, args=extension_args, timeout=45000)
                 else:
                     decrypt_password(account['password_cipher'])
                     browser = await self.pw.chromium.launch(
@@ -338,6 +357,8 @@ class Manager:
                     self.browsers[eid] = browser
                     context = await browser.new_context(no_viewport=True)
                 self.contexts[eid] = context
+                if item['mode'] == 'persistent':
+                    self.yescaptcha_started[eid] = bool(extension['enabled'])
                 context.on('close', lambda *_: self.closed(eid, context))
                 self.watch_pages(eid, context)
                 self.states[eid] = 'running'
@@ -553,6 +574,8 @@ class Manager:
 
 manager = Manager()
 pelican = PelicanTasks(manager)
+from file_probe import FileProbe, PROBE_PAGE
+file_probe = FileProbe(manager)
 
 
 @asynccontextmanager
@@ -627,6 +650,35 @@ async def index():
 async def environments():
     return {'environments': manager.snapshot(), 'max_running': MAX_RUNNING,
             'browser_mode': '内置 Chromium' if FROZEN else 'Playwright Chromium（源码模式）'}
+
+
+@app.get('/api/updates')
+async def update_info():
+    release=await asyncio.to_thread(updates.check)
+    return {**release,'install_supported':FROZEN and sys.platform=='win32','status':updates.status}
+
+
+@app.post('/api/updates/install',status_code=202)
+async def install_update():
+    if not FROZEN or sys.platform!='win32':raise HTTPException(409,'源码/Mac版请从项目页面手动更新')
+    if not getattr(app.state,'request_exit',None):raise HTTPException(409,'请使用 Harbor 启动器运行更新')
+    async with manager.lock:
+        if manager.updating:raise HTTPException(409,'更新已经在进行')
+        if manager.contexts or any(r['status'] in ('running','stopping') for r in pelican.runs.values()):
+            raise HTTPException(409,'请先保存工作并关闭浏览器环境，再一键更新；不会强制中断任务')
+        manager.updating=True
+    async def perform():
+        try:
+            release=await asyncio.to_thread(updates.check)
+            exe=await asyncio.to_thread(updates.prepare,release)
+            import os
+            updates.schedule(exe,os.getpid(),release['latest_version'])
+            asyncio.get_running_loop().call_later(1,app.state.request_exit)
+        except Exception:
+            updates.status={'phase':'failed','message':'更新失败，旧程序和数据未覆盖；可到项目页面手动下载'}
+            manager.updating=False
+    app.state.update_task=asyncio.create_task(perform())
+    return {'started':True}
 
 
 @app.get('/api/accounts')
@@ -736,10 +788,12 @@ async def delete(eid: str):
             profile.rename(archive / f'{eid}-{uuid.uuid4().hex[:8]}')
         with manager.db:
             manager.db.execute('DELETE FROM environments WHERE id=?', (eid,))
+            manager.db.execute('DELETE FROM yescaptcha_settings WHERE environment_id=?', (eid,))
             manager.db.execute('DELETE FROM pelican_settings WHERE environment_id=?', (eid,))
         pelican.runs.pop(eid, None)
         pelican.last_send.pop(eid, None)
         manager.states.pop(eid, None)
+        manager.yescaptcha_started.pop(eid, None)
         manager.errors.pop(eid, None)
         manager.auth_states.pop(eid, None)
         manager.manual_login.pop(eid, None)
@@ -748,6 +802,18 @@ async def delete(eid: str):
         manager.temporary_sessions.discard(eid)
         manager.log(eid, '环境已删除；账号和历史任务保留，旧版 profile 如存在则归档')
         return {'ok': True}
+
+
+@app.put('/api/environments/{eid}/yescaptcha')
+async def configure_yescaptcha(eid: str, inp: YesCaptchaInput):
+    async with manager.lock:
+        item = manager.get(eid)
+        try:
+            with manager.db:
+                yescaptcha_support.write_settings(manager.db, eid, item['mode'], inp.enabled, inp.folder)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return {'ok': True, 'takes_effect': 'next_environment_start', 'running_unchanged': eid in manager.contexts}
 
 
 @app.post('/api/environments/{eid}/start')
@@ -807,6 +873,67 @@ async def task_stop(eid: str):
     manager.get(eid)
     await pelican.stop(eid)
     return pelican.snapshot(eid)
+
+
+@app.get('/file-probe',response_class=HTMLResponse)
+async def file_probe_ui():return HTMLResponse(PROBE_PAGE,headers={'Cache-Control':'no-store'})
+
+
+@app.get('/api/file-probe/pages')
+async def file_probe_pages(eid: str):return {'pages':file_probe.page_list(eid)}
+
+
+def require_probe_idle(key):
+    file_probe.get_page(key)
+    eid=file_probe.pages[key][0]
+    if pelican.snapshot(eid)['status'] in ('running','stopping'):
+        raise HTTPException(409,'请先停止该环境的自动调度；探测不会代你停止任务')
+
+
+@app.post('/api/file-probe/{key}/watch')
+async def file_probe_watch(key: str):
+    require_probe_idle(key)
+    return file_probe.start(key)
+
+
+@app.post('/api/file-probe/{key}/inspect')
+async def file_probe_inspect(key: str):
+    require_probe_idle(key)
+    return await file_probe.inspect(key)
+
+
+@app.post('/api/file-probe/{key}/stop')
+async def file_probe_stop(key: str):
+    file_probe.finish(key)
+    return file_probe.status(key)
+
+
+@app.get('/api/file-probe/{key}/content')
+async def file_probe_content(key: str,index: int=Query(default=0,ge=0,le=1)):
+    return JSONResponse({'html':file_probe.content(key,index)},headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+
+
+@app.get('/api/file-probe/{key}')
+async def file_probe_status(key: str):return file_probe.status(key)
+
+
+@app.get('/api/html-results')
+async def html_results(q: str=Query(default='',max_length=200),kind: str='',rating: str='',starred: bool=False):
+    return pelican.history.html.list(q,kind,rating,starred)
+
+
+@app.get('/api/html-results/{rid}/preview')
+async def html_preview(rid: str):
+    return JSONResponse({'html':preview_html(pelican.history.html.source(rid))},headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+
+
+@app.get('/api/html-results/{rid}/download')
+async def html_download(rid: str):
+    content=pelican.history.html.source(rid)
+    if not re.fullmatch(r'[0-9a-f]{32}',rid):raise HTTPException(400,'无效记录 ID')
+    return Response(content.encode('utf-8'),media_type='application/octet-stream',headers={
+        'Content-Disposition':f'attachment; filename="result-{rid}.html"',
+        'X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'Cache-Control':'no-store'})
 
 
 @app.get('/api/records')

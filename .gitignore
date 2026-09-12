@@ -36,3 +36,9 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+/.venv-macos/
+**/thinking-validation/
+**/experiment-results/
+/file-probes/
+/migration-backups/
+/session-profiles/

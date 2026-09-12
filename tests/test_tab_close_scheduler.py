@@ -20,6 +20,7 @@ class Page:
         for fn in self.listeners[:]:fn(self)
     async def stage(self,name):
         if self.index==1 and name==self.ctx.stage:
+            if self.ctx.action=='navigate':raise RuntimeError('Execution context was destroyed, most likely because of a navigation')
             if self.ctx.action=='error':raise RuntimeError('synthetic failure')
             if self.ctx.action=='stop':
                 self.ctx.run['stop'].set()
@@ -49,6 +50,9 @@ class Context:
 class History:
     def __init__(self):self.cache={};self.saves=0
     def save_run(self,run):self.saves+=1
+    def begin_html_capture(self,page):
+        return SimpleNamespace(arm=lambda:None,close=lambda:None)
+    async def capture_html(self,run,job,page):pass
     async def screenshot(self,run,job,page):await page.stage('screenshot')
 
 async def simulate(stage,action='close',concurrency=1,total=3,locked=False):

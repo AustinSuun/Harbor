@@ -3,6 +3,7 @@ import base64
 import ctypes
 from ctypes import wintypes
 import sys
+import uuid
 
 
 class CredentialError(Exception):
@@ -33,11 +34,31 @@ def _protect(data, decrypt=False):
         kernel.LocalFree(ctypes.cast(output.data, ctypes.c_void_p))
 
 
+def _mac_keychain():
+    try:
+        from keyring.backends.macOS import Keyring
+        return Keyring()
+    except Exception:
+        raise CredentialError('macOS 钥匙串不可用；请安装 requirements-macos.txt，不会回退到明文存储') from None
+
+
 def encrypt_password(password):
+    if sys.platform=='darwin':
+        token=uuid.uuid4().hex
+        try:_mac_keychain().set_password('Harbor',token,password)
+        except Exception:raise CredentialError('无法写入 macOS 钥匙串，请确认本机授权') from None
+        return 'macos-keychain:'+token
     return base64.b64encode(_protect(password.encode('utf-8'))).decode('ascii')
 
 
 def decrypt_password(ciphertext):
+    if sys.platform=='darwin':
+        if not ciphertext.startswith('macos-keychain:'):
+            raise CredentialError('其他平台凭据不能直接迁移到 Mac，请重新保存密码')
+        try:value=_mac_keychain().get_password('Harbor',ciphertext.split(':',1)[1])
+        except Exception:raise CredentialError('无法读取 macOS 钥匙串，请确认本机授权') from None
+        if value is None:raise CredentialError('钥匙串凭据不存在，请重新保存密码')
+        return value
     try:
         return _protect(base64.b64decode(ciphertext, validate=True), True).decode('utf-8')
     except CredentialError:

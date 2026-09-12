@@ -24,6 +24,8 @@ ACTIVE = {'running', 'stopping'}
 class TaskSettings(BaseModel):
     kind: Literal["pelican","recreate","stickman","pelican_quick"] = "pelican"
     capture_screenshot: bool = True
+    experimental_stop_thinking: bool = False
+    experimental_auto_archive: bool = False
     total: int = Field(default=5, ge=1, le=50)
     interval: float = Field(default=15, ge=3, le=3600, allow_inf_nan=False)
     concurrency: int = Field(default=1, ge=1, le=3)
@@ -144,7 +146,7 @@ class PelicanTasks:
                 'started_at': run['started_at'], 'finished_at': run.get('finished_at'),
                 'jobs': [{k:v for k,v in j.items() if k not in ('turns','raw_text','events','analysis') and not k.startswith('_')} for j in jobs], 'success': sum(j['status']=='success' for j in jobs),
                 'failed': sum(j['status'] in ('failed',) for j in jobs),
-                'finished': sum(j['status']=='success' or bool(j.get('page_closed')) for j in jobs),
+                'finished': sum(j['status']=='success' or bool(j.get('page_closed')) or bool(j.get('page_departed')) or bool(j.get('local_finished')) for j in jobs),
                 'submitted': sum(bool(j.get('submitted')) for j in jobs),
                 'untracked': sum(j['status']=='untracked' for j in jobs),
                 'unknown': sum(j['status']=='unknown' for j in jobs),
@@ -169,6 +171,7 @@ class PelicanTasks:
             run = {'id': uuid.uuid4().hex, 'status':'running', 'settings':config,
                    'started_at':datetime.now(timezone.utc).isoformat(), 'stop':asyncio.Event(),
                    'environment_id':eid,'environment_name':self.manager.get(eid)['name'],
+                   'account_snapshot':self.history.account_snapshot(eid),
                    'jobs':[{'record_id':uuid.uuid4().hex,'number':i+1,'status':'pending','message':'等待执行','url':'','turns':[dict(t,status='pending',raw_text='') for t in prompts[i]]} for i in range(settings.total)],
                    'context':context, 'workers':[], 'next':0, 'opening_gate':asyncio.Lock(), 'last_open':0.0, 'open_not_before':0.0}
             self.history.save_run(run)
@@ -252,6 +255,33 @@ class PelicanTasks:
                 return
             await self.pause(run, remaining)
 
+    @staticmethod
+    def conversation_key(url):
+        from urllib.parse import urlparse
+        import re
+        value=urlparse(url)
+        if value.scheme=='https' and value.hostname=='arena.ai':
+            match=re.fullmatch(r'/agent/([0-9a-f-]{36})/?',value.path)
+            return match.group(1) if match else None
+        return None
+
+    async def check_conversation(self, page, run, job):
+        current=self.conversation_key(page.url)
+        bound=job.get('_conversation_key') or self.conversation_key(job.get('url',''))
+        if bound and current!=bound:
+            await self.pause(run,.3)
+            if self.conversation_key(page.url)!=bound:
+                raise RuntimeError('HARBOR_TASK_PAGE_LEFT')
+        elif current:
+            job['_conversation_key']=current
+
+    def local_navigation_error(self, eid, run, page, exc):
+        text=str(exc).lower()
+        signals=('harbor_task_page_left','execution context was destroyed','cannot find context with specified id','frame was detached')
+        return (page is not None and not page.is_closed() and not run['stop'].is_set()
+                and self.manager.contexts.get(eid) is run['context']
+                and any(s in text for s in signals))
+
     def can_refill_after_close(self, eid, run, page, page_closed):
         return (page is not None and (page_closed or page.is_closed())
                 and not run['stop'].is_set()
@@ -282,6 +312,7 @@ class PelicanTasks:
             job=run['jobs'][run['next']]
             run['next']+=1
             page=None
+            html_capture=None
             page_closed=False
             close_handler=None
             close_cancel_requested=False
@@ -307,6 +338,8 @@ class PelicanTasks:
                         close_cancel_requested = True
                         owner.cancel()
                 page.on('close', close_handler)
+                html_capture=self.history.begin_html_capture(page)
+                job['_html_capture']=html_capture
                 if page.is_closed():
                     close_handler()
                 job.update(status='opening',message='打开 Arena，等待页面加载')
@@ -337,6 +370,7 @@ class PelicanTasks:
                         job.update(status='sending',message=f'第 {index+1} 题：点击发送（仅一次）')
                         self.history.save_run(run)  # Durable checkpoint BEFORE an irreversible click.
                         self.checkpoint(run)
+                        html_capture.arm()
                         attempted=True
                         await button.click(timeout=10000)
                         self.last_send[eid]=time.monotonic()
@@ -350,14 +384,23 @@ class PelicanTasks:
                     self.history.save_run(run)
                     self.manager.log(eid,f'任务 #{job["number"]} 第 {index+1} 题已发送')
                     await self.wait_reply(page,run,job,reply_baseline,seen_generating)
+                    if job.get('thinking_stopped'):break
                     turn['status']='completed'
                     turn['completed_at']=datetime.now(timezone.utc).isoformat()
                     self.history.save_run(run)
                     # Each task uses its own page/conversation.
+                if job.get('thinking_stopped'):
+                    job.update(status='interrupted',message='已请求停止 Thinking 并确认界面空闲；不声称服务端取消成功',local_finished=True)
+                    turn['status']='interrupted'
+                    self.history.save_run(run)
+                    await self.maybe_archive(page,run,job)
+                    continue
                 job.update(status='success',message='回复完成，已保存原文并释放名额',url=page.url)
                 self.history.save_run(run)
+                await self.history.capture_html(run,job,page)
                 if run['settings']['capture_screenshot']:
                     await self.history.screenshot(run,job,page)
+                await self.maybe_archive(page,run,job)
                 self.manager.log(eid,f'任务 #{job["number"]}：{job["message"]}')
             except asyncio.CancelledError:
                 if self.can_refill_after_close(eid, run, page, page_closed):
@@ -381,6 +424,14 @@ class PelicanTasks:
                     job['turns'][job['current_turn']-1]['status']=job['status']
                 return
             except Exception as exc:
+                if self.local_navigation_error(eid,run,page,exc):
+                    if job['status']!='success':
+                        job.update(status='untracked' if submitted else ('unknown' if attempted else 'failed'),page_departed=True,
+                            message='本页已离开原对话或发生页面重建；仅停止本题跟踪，不重发，不中断其他任务；未确认服务端停止或归档')
+                        if job.get('current_turn'):job['turns'][job['current_turn']-1]['status']=job['status']
+                    run['open_not_before']=max(run.get('open_not_before',0),time.monotonic()+run['settings']['interval'])
+                    self.manager.log(eid,f'任务 #{job["number"]} 页面变化已隔离；后续任务按间隔继续')
+                    continue
                 # Playwright's closed-page error can arrive before its close callback.
                 if self.can_refill_after_close(eid, run, page, page_closed):
                     self.record_page_closed(eid, run, job, attempted, submitted)
@@ -400,10 +451,22 @@ class PelicanTasks:
                     await self.history.screenshot(run,job,page)
                 return
             finally:
+                if html_capture is not None:html_capture.close()
+                job.pop('_html_capture',None)
                 # Completed/old tabs must never cancel a worker processing a new job.
                 if page is not None and close_handler is not None:
                     page.remove_listener('close', close_handler)
                 self.history.save_run(run)
+
+    async def maybe_archive(self,page,run,job):
+        if not run['settings'].get('experimental_auto_archive'):return
+        from archive_actions import archive_reason, archive_conversation
+        reason=archive_reason(job,run['settings'].get('kind'))
+        if not reason:return
+        job['archive_result']=await archive_conversation(page,job.get('url',''),reason=reason,dry_run=False)
+        state=job['archive_result']['status']
+        job['message']=job.get('message','')+('；归档界面已确认，本地结果保留' if state=='archive_ui_confirmed' else '；自动归档未确认：'+state)
+        self.history.save_run(run)
 
     async def wait_reply(self, page, run, job, baseline, seen_generating):
         """Retain the worker's slot until a conservative completion observation.
@@ -416,7 +479,9 @@ class PelicanTasks:
         previous=None
         while True:
             self.checkpoint(run)
+            await self.check_conversation(page,run,job)
             state=await page.evaluate(READ_REPLY)
+            await self.check_conversation(page,run,job)
             turn=job['turns'][job['current_turn']-1]
             is_new_response=(state['count']>baseline['count'] or
                 bool(state.get('key') and state['key']!=baseline.get('key')))
@@ -427,6 +492,18 @@ class PelicanTasks:
                 turn.update(raw_text=captured['text'],capture_source=captured['source'],truncated=captured['truncated'])
                 job['url']=page.url
                 self.history.save_job(run,job)
+            if (run['settings'].get('experimental_stop_thinking') and is_new_response
+                    and not job.get('_thinking_stop_attempted')):
+                from experiments.gacha_probe.probe import inspect, attempt_stop
+                from experiments.gacha_probe.candidate_policy import ImmediateThinking
+                snap=await inspect(page)
+                if snap.get('thinking_explicit') and snap.get('turn_id') and snap.get('turn_id')!=baseline.get('key'):
+                    result=await attempt_stop(page,ImmediateThinking(page.url,snap['turn_id']),dry_run=False)
+                    if result.get('click_attempted'):job['_thinking_stop_attempted']=True
+                    job['thinking_stop_result']={k:result[k] for k in ('status','click_attempted','ui_idle','server_cancelled')}
+                    if result.get('ui_idle'):
+                        job['thinking_stopped']=True
+                        return
             seen_generating=seen_generating or state['generating']
             signature=(state['count'],state['text'])
             new_output=bool(state['text'].strip()) and is_new_response

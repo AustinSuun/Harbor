@@ -1,0 +1,2 @@
+-r requirements.txt
+keyring>=25; sys_platform == "darwin"

@@ -36,10 +36,18 @@ def serve():
     ensure_browser_resources()
     import uvicorn
     from browser_manager import app
-    uvicorn.run(app,host='127.0.0.1',port=8766,workers=1,loop='asyncio',http='h11',ws='none')
+    server=uvicorn.Server(uvicorn.Config(app,host='127.0.0.1',port=8766,workers=1,loop='asyncio',http='h11',ws='none'))
+    app.state.request_exit=lambda:setattr(server,'should_exit',True)
+    server.run()
 
 
 def launch():
+    if FROZEN:
+        from update_service import installed_update
+        newer=installed_update(DATA_DIR)
+        if newer:
+            subprocess.Popen([str(newer)])
+            return 0
     if is_harbor_running():
         print('管理器已经运行，直接打开页面。',flush=True)
         open_manager()
@@ -90,7 +98,17 @@ if __name__=='__main__':
     import multiprocessing
     multiprocessing.freeze_support()
     try:
-        if '--serve' in sys.argv:
+        if '--self-test' in sys.argv:
+            from manager_credentials import encrypt_password,decrypt_password
+            from artifact_metrics import candidate_summary
+            from yescaptcha_support import launch_args
+            from app_version import VERSION
+            ensure_browser_resources()
+            assert decrypt_password(encrypt_password('Harbor isolated self-test'))=='Harbor isolated self-test'
+            assert launch_args('persistent',False,'')==['--disable-extensions']
+            assert candidate_summary('<html></html>',complete_validated=True)['line_limit']==150
+            print(json.dumps({'version':VERSION,'packaged_imports':'passed','credential_roundtrip':'passed','real_accounts_used':False,'manager_started':False}))
+        elif '--serve' in sys.argv:
             serve()
         else:
             result=launch()
