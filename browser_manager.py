@@ -576,6 +576,8 @@ manager = Manager()
 pelican = PelicanTasks(manager)
 from file_probe import FileProbe, PROBE_PAGE
 file_probe = FileProbe(manager)
+from thinking_probe import ThinkingProbe, PROBE_UI as THINKING_PROBE_UI
+thinking_probe = ThinkingProbe(manager)
 
 
 @asynccontextmanager
@@ -873,6 +875,28 @@ async def task_stop(eid: str):
     manager.get(eid)
     await pelican.stop(eid)
     return pelican.snapshot(eid)
+
+
+@app.get('/thinking-probe',response_class=HTMLResponse)
+async def thinking_probe_ui():return HTMLResponse(THINKING_PROBE_UI)
+
+
+@app.get('/api/thinking-probe/pages')
+async def thinking_probe_pages():return {'pages':thinking_probe.list_pages()}
+
+
+class ThinkingMarkInput(BaseModel):
+    mark: Literal['unmarked','visible-thinking','thinking-ended','reply-completed','uncertain'] = 'unmarked'
+
+
+@app.post('/api/thinking-probe/{key}/sample')
+async def thinking_probe_sample(key: str, inp: ThinkingMarkInput):
+    return await thinking_probe.sample(key,inp.mark)
+
+
+@app.get('/api/thinking-probe/{key}/report')
+async def thinking_probe_report(key: str):
+    return JSONResponse(thinking_probe.report(key),headers={'Content-Disposition':'attachment; filename="thinking-diagnostic.json"'})
 
 
 @app.get('/file-probe',response_class=HTMLResponse)
