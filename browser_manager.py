@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from html_results import preview_html
 import yescaptcha_support
+import trace_inspector_support
 import re
 from task_history import ReviewInput
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -75,6 +76,11 @@ class YesCaptchaInput(BaseModel):
     folder: str = Field(default='', max_length=2048)
 
 
+class TraceInspectorInput(BaseModel):
+    enabled: bool = False
+    folder: str = Field(default='', max_length=2048)
+
+
 class ManualLoginInput(BaseModel):
     confirmed: bool = False
     email: str = Field(min_length=1, max_length=254)
@@ -110,6 +116,7 @@ class Manager:
     def __init__(self):
         self.contexts = {}
         self.yescaptcha_started = {}
+        self.trace_inspector_started = {}
         self.browsers = {}
         self.login_jobs = {}
         self.auth_watch_jobs = {}
@@ -173,6 +180,7 @@ class Manager:
         self.db.execute('UPDATE environments SET extension_enabled=0 WHERE extension_enabled<>0')
         self.db.commit()
         yescaptcha_support.initialize(self.db, DATA / 'migration-backups')
+        trace_inspector_support.initialize(self.db, DATA / 'migration-backups')
 
     def get(self, eid):
         row = self.db.execute('SELECT * FROM environments WHERE id=?', (eid,)).fetchone()
@@ -238,6 +246,8 @@ class Manager:
             item['auth_status'] = self.auth_states.get(eid, 'not_logged_in')
             item['auth_detail'] = self.auth_evidence.get(eid, {})
             item.pop('extension_enabled',None)  # Legacy column remains unrelated.
+            item['trace_inspector'] = trace_inspector_support.read_settings(self.db, eid)
+            item['trace_inspector']['runtime'] = ('requested_on_launch' if self.trace_inspector_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
             item['yescaptcha'] = yescaptcha_support.read_settings(self.db, eid)
             item['yescaptcha']['runtime'] = ('requested_on_launch' if self.yescaptcha_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
             item['task'] = pelican.snapshot(eid)
@@ -344,6 +354,8 @@ class Manager:
                     raise CredentialError('请先在账号管理中保存 Arena 邮箱和密码。')
                 extension = yescaptcha_support.read_settings(self.db, eid)
                 extension_args = yescaptcha_support.launch_args(item['mode'], extension['enabled'], extension['folder'])
+                trace_extension = trace_inspector_support.read_settings(self.db, eid)
+                extension_args = trace_inspector_support.launch_args(item['mode'], trace_extension, extension_args)
                 if item['mode'] == 'persistent':
                     profile = DATA / 'session-profiles' / eid
                     profile.mkdir(parents=True, exist_ok=True)
@@ -359,6 +371,7 @@ class Manager:
                 self.contexts[eid] = context
                 if item['mode'] == 'persistent':
                     self.yescaptcha_started[eid] = bool(extension['enabled'])
+                    self.trace_inspector_started[eid] = bool(trace_extension['enabled'])
                 context.on('close', lambda *_: self.closed(eid, context))
                 self.watch_pages(eid, context)
                 self.states[eid] = 'running'
@@ -791,11 +804,13 @@ async def delete(eid: str):
         with manager.db:
             manager.db.execute('DELETE FROM environments WHERE id=?', (eid,))
             manager.db.execute('DELETE FROM yescaptcha_settings WHERE environment_id=?', (eid,))
+            manager.db.execute('DELETE FROM trace_inspector_settings WHERE environment_id=?', (eid,))
             manager.db.execute('DELETE FROM pelican_settings WHERE environment_id=?', (eid,))
         pelican.runs.pop(eid, None)
         pelican.last_send.pop(eid, None)
         manager.states.pop(eid, None)
         manager.yescaptcha_started.pop(eid, None)
+        manager.trace_inspector_started.pop(eid, None)
         manager.errors.pop(eid, None)
         manager.auth_states.pop(eid, None)
         manager.manual_login.pop(eid, None)
@@ -804,6 +819,18 @@ async def delete(eid: str):
         manager.temporary_sessions.discard(eid)
         manager.log(eid, '环境已删除；账号和历史任务保留，旧版 profile 如存在则归档')
         return {'ok': True}
+
+
+@app.put('/api/environments/{eid}/trace-inspector')
+async def configure_trace_inspector(eid: str, inp: TraceInspectorInput):
+    async with manager.lock:
+        item = manager.get(eid)
+        try:
+            with manager.db:
+                trace_inspector_support.write_settings(manager.db, eid, item['mode'], inp.enabled, inp.folder)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return {'ok': True, 'takes_effect': 'next_environment_start', 'running_unchanged': eid in manager.contexts}
 
 
 @app.put('/api/environments/{eid}/yescaptcha')

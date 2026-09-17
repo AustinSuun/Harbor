@@ -123,14 +123,15 @@ def main():
     # Record package versions, but not usernames, machine paths or account data.
     versions=json.loads(subprocess.check_output([str(python),'-c',
         "import importlib.metadata as m,json; print(json.dumps({n:m.version(n) for n in ['playwright','fastapi','uvicorn','pydantic','pyinstaller']}))"],text=True))
-    manifest={'application':'Harbor','application_version':'0.3.9','platform':'Windows x64','created_at':stamp,
+    manifest={'application':'Harbor','application_version':'0.3.10','platform':'Windows x64','created_at':stamp,
               'dependencies':versions,'browser_folders':[p.name for p in bundle.iterdir()],
               'native_libraries':[p.name for p in native_dlls],
-              'plugins':False,'plugin_loading_support':{'yescaptcha':'persistent-opt-in','default_enabled':False,'third_party_plugin_bundled':False},
+              'plugins':False,'plugin_loading_support':{'yescaptcha':'persistent-opt-in','trace_inspector':'persistent-opt-in','default_enabled':False,'third_party_plugin_bundled':False},
               'workspace_html_capture':True,'candidate_html_line_limit':150,'thinking_auto_stop':False,
               'thinking_stop_support':'experimental-opt-in','auto_archive_support':'experimental-opt-in',
               'update_support':'windows-side-by-side','mac_support':'source-preview',
               'thinking_diagnostic':'read-only-human-labeled','project_controls':'top-right',
+              'ui_design':'light-teal-workspace','concurrency_fixed_cap':None,
               'release_channel':'preview','user_data_included':False,'runtime_validated':False,
               'data_directory':'%LOCALAPPDATA%/Harbor'}
     (app/'distribution-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')

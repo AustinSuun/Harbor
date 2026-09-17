@@ -28,7 +28,7 @@ class TaskSettings(BaseModel):
     experimental_auto_archive: bool = False
     total: int = Field(default=5, ge=1, le=50)
     interval: float = Field(default=15, ge=3, le=3600, allow_inf_nan=False)
-    concurrency: int = Field(default=1, ge=1, le=3)
+    concurrency: int = Field(default=1, ge=1)
     activate_fallback: bool = True
     confirmed: bool = False
 
@@ -230,7 +230,8 @@ class PelicanTasks:
         monitor=asyncio.create_task(self.persist_loop(run))
         try:
             if not run['stop'].is_set():
-                run['workers']=[asyncio.create_task(self.worker(eid,run)) for _ in range(run['settings']['concurrency'])]
+                worker_count = min(run['settings']['concurrency'], len(run['jobs']))
+                run['workers']=[asyncio.create_task(self.worker(eid,run)) for _ in range(worker_count)]
                 await asyncio.gather(*run['workers'], return_exceptions=True)
         finally:
             monitor.cancel()
