@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sqlite3
 import uuid
+from trace_inspector_bundle import verified_bundle
 
 
 def validate_folder(value):
@@ -54,12 +55,17 @@ def validate_folder(value):
     return str(folder)
 
 
+def resolve_folder(value=''):
+    value = value.strip()
+    return validate_folder(value or verified_bundle())
+
+
 def launch_args(mode, settings, existing_args):
     if not settings['enabled']:
         return list(existing_args)
     if mode != 'persistent':
         raise ValueError('Trace Inspector 当前仅支持保留型环境，不改变临时无痕环境的隔离方式')
-    folder = validate_folder(settings['folder'])
+    folder = resolve_folder(settings['folder'])
     paths = []
     for arg in existing_args:
         if arg.startswith('--load-extension='):
@@ -91,5 +97,8 @@ def read_settings(db, eid):
 def write_settings(db, eid, mode, enabled, folder):
     if mode != 'persistent':
         raise ValueError('Trace Inspector 当前仅支持保留型环境')
-    folder = validate_folder(folder) if enabled else folder.strip()
+    folder = folder.strip()
+    if enabled:
+        resolved = resolve_folder(folder)
+        folder = resolved if folder else ''  # Empty is the portable bundled-resource sentinel.
     db.execute('INSERT INTO trace_inspector_settings(environment_id,enabled,folder) VALUES (?,?,?) ON CONFLICT(environment_id) DO UPDATE SET enabled=excluded.enabled,folder=excluded.folder', (eid, int(enabled), folder))

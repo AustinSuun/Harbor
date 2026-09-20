@@ -107,6 +107,8 @@ if __name__=='__main__':
             assert decrypt_password(encrypt_password('Harbor isolated self-test'))=='Harbor isolated self-test'
             assert launch_args('persistent',False,'')==['--disable-extensions']
             assert candidate_summary('<html></html>',complete_validated=True)['line_limit']==150
+            from trace_inspector_support import resolve_folder
+            resolve_folder('')  # Verify the frozen/source runtime-only bundle, without loading a browser.
             print(json.dumps({'version':VERSION,'packaged_imports':'passed','credential_roundtrip':'passed','real_accounts_used':False,'manager_started':False}))
         elif '--serve' in sys.argv:
             serve()

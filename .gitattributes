@@ -1,0 +1,2 @@
+# Preserve vetted extension bytes; FILE_HASHES is intentionally byte-exact.
+extensions/arena-trace-inspector/* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

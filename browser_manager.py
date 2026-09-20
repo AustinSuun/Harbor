@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from html_results import preview_html
 import yescaptcha_support
 import trace_inspector_support
+import default_plugins
 import re
 from task_history import ReviewInput
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -69,6 +70,11 @@ class AccountInput(BaseModel):
         if not value:
             raise ValueError('名称不能为空')
         return value
+
+
+class GlobalPluginInput(BaseModel):
+    client_key: SecretStr | None = None
+    clear: bool = False
 
 
 class YesCaptchaInput(BaseModel):
@@ -124,6 +130,7 @@ class Manager:
         self.auth_evidence = {}
         self.manual_login = {}
         self.temporary_sessions = set()
+        self.temporary_profiles = {}
         self.discard_pending = set()
         self.cleanup_tasks = {}
         self.background_tasks = set()
@@ -181,6 +188,7 @@ class Manager:
         self.db.commit()
         yescaptcha_support.initialize(self.db, DATA / 'migration-backups')
         trace_inspector_support.initialize(self.db, DATA / 'migration-backups')
+        default_plugins.initialize(self.db, DATA)
 
     def get(self, eid):
         row = self.db.execute('SELECT * FROM environments WHERE id=?', (eid,)).fetchone()
@@ -246,9 +254,9 @@ class Manager:
             item['auth_status'] = self.auth_states.get(eid, 'not_logged_in')
             item['auth_detail'] = self.auth_evidence.get(eid, {})
             item.pop('extension_enabled',None)  # Legacy column remains unrelated.
-            item['trace_inspector'] = trace_inspector_support.read_settings(self.db, eid)
+            item['trace_inspector'] = {'enabled':True,'folder':'','automatic':True}
             item['trace_inspector']['runtime'] = ('requested_on_launch' if self.trace_inspector_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
-            item['yescaptcha'] = yescaptcha_support.read_settings(self.db, eid)
+            item['yescaptcha'] = {'enabled':True,'folder':'','automatic':True}
             item['yescaptcha']['runtime'] = ('requested_on_launch' if self.yescaptcha_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
             item['task'] = pelican.snapshot(eid)
             item.update(status=self.states.get(eid, 'stopped'), error=self.errors.get(eid, ''), profile_path=str(DATA / 'session-profiles' / eid) if item['mode']=='persistent' else '')
@@ -287,6 +295,8 @@ class Manager:
                 await browser.close()
             if login_job:
                 await asyncio.gather(login_job, return_exceptions=True)
+            await default_plugins.remove_temporary_profile(self.temporary_profiles.get(eid))
+            self.temporary_profiles.pop(eid, None)
             async with self.lock:
                 # Wait for final task history writes before dropping runtime state.
                 await pelican.stop(eid)
@@ -352,26 +362,24 @@ class Manager:
                 account = self.account_for(eid)
                 if not account['login_email'] or not account['password_cipher']:
                     raise CredentialError('请先在账号管理中保存 Arena 邮箱和密码。')
-                extension = yescaptcha_support.read_settings(self.db, eid)
-                extension_args = yescaptcha_support.launch_args(item['mode'], extension['enabled'], extension['folder'])
-                trace_extension = trace_inspector_support.read_settings(self.db, eid)
-                extension_args = trace_inspector_support.launch_args(item['mode'], trace_extension, extension_args)
+                key = default_plugins.key_value(self.db)
+                extension_args = await default_plugins.launch_resources(DATA)
                 if item['mode'] == 'persistent':
                     profile = DATA / 'session-profiles' / eid
                     profile.mkdir(parents=True, exist_ok=True)
-                    context = await self.pw.chromium.launch_persistent_context(
-                        user_data_dir=str(profile), channel='chromium', headless=False,
-                        no_viewport=True, args=extension_args, timeout=45000)
                 else:
                     decrypt_password(account['password_cipher'])
-                    browser = await self.pw.chromium.launch(
-                        channel='chromium', headless=False, args=['--disable-extensions'], timeout=45000)
-                    self.browsers[eid] = browser
-                    context = await browser.new_context(no_viewport=True)
+                    profile = default_plugins.make_temporary_profile(DATA)
+                    self.temporary_profiles[eid] = profile
+                context = await self.pw.chromium.launch_persistent_context(
+                    user_data_dir=str(profile), channel='chromium', headless=False,
+                    no_viewport=True, args=extension_args, offline=True, timeout=45000)
+                await default_plugins.configure_context(context, key)
+                key = None
+                await context.set_offline(False)
                 self.contexts[eid] = context
-                if item['mode'] == 'persistent':
-                    self.yescaptcha_started[eid] = bool(extension['enabled'])
-                    self.trace_inspector_started[eid] = bool(trace_extension['enabled'])
+                self.yescaptcha_started[eid] = True
+                self.trace_inspector_started[eid] = True
                 context.on('close', lambda *_: self.closed(eid, context))
                 self.watch_pages(eid, context)
                 self.states[eid] = 'running'
@@ -387,6 +395,11 @@ class Manager:
                 browser = self.browsers.pop(eid, None)
                 if browser:
                     await browser.close()
+                try:
+                    await default_plugins.remove_temporary_profile(self.temporary_profiles.get(eid))
+                    self.temporary_profiles.pop(eid, None)
+                except ValueError:
+                    self.log(eid, '临时资料清理失败，请退出浏览器后检查 temporary-plugin-profiles')
                 self.auth_states[eid] = 'not_logged_in'
                 self.states[eid] = 'error'
                 self.errors[eid] = str(exc)[:1000]
@@ -696,6 +709,21 @@ async def install_update():
     return {'started':True}
 
 
+@app.get('/api/plugins')
+async def plugin_settings():
+    return default_plugins.settings(manager.db)
+
+
+@app.put('/api/plugins')
+async def plugin_settings_update(inp: GlobalPluginInput):
+    async with manager.lock:
+        try:
+            default_plugins.save_key(manager.db, inp.client_key.get_secret_value() if inp.client_key is not None else None, inp.clear)
+        except (ValueError, CredentialError):
+            raise HTTPException(422, '密钥未保存：请检查 ClientKey 格式和本机凭据存储；不会保存明文') from None
+        return {**default_plugins.settings(manager.db), 'running_unchanged':True}
+
+
 @app.get('/api/accounts')
 async def accounts():
     return {'accounts': manager.account_snapshot()}
@@ -719,8 +747,13 @@ async def account_update(aid: str, inp: AccountInput):
     async with manager.lock:
         old = manager.account(aid)
         linked = manager.db.execute('SELECT id FROM environments WHERE account_id=?', (aid,)).fetchall()
-        if any(r['id'] in manager.contexts for r in linked):
-            raise HTTPException(409, '请先关闭此账号的所有运行环境')
+        active = any(r['id'] in manager.contexts or manager.states.get(r['id']) in ('starting', 'running', 'stopping') for r in linked)
+        if active:
+            if inp.clear_credentials or inp.login_password or inp.login_email != old['login_email']:
+                raise HTTPException(409, '环境运行时只能修改名称和备注；更换登录凭据请先关闭关联环境')
+            with manager.db:
+                manager.db.execute('UPDATE accounts SET name=?,note=? WHERE id=?', (inp.name, inp.note, aid))
+            return {'ok': True}
         # Email identity is immutable once linked: never reuse another account's profile.
         if linked and (inp.clear_credentials or inp.login_email != old['login_email']):
             raise HTTPException(409, '已有环境关联时不可更换邮箱或清空账号，请另建账号；密码仍可更新')

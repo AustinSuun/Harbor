@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Arena Trace Inspector</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<header class="app-header"><div class="brand"><span class="brand-mark">A</span><div><h1>Trace Inspector</h1><p>ARENA · RUN OBSERVATORY</p></div></div><span class="version">v2.0.0</span></header>
+<section class="listen-bar"><div class="listen-info"><span id="listen-dot" class="dot"></span><span id="listen-label">检查标签页</span></div><button id="toggle" class="small" disabled>开启当前页监听</button></section>
+<p id="status" class="status" role="status" aria-live="polite">正在读取当前状态…</p>
+<div id="view-context" class="view-context" hidden><span id="view-title"></span><button id="back-current" class="text-button" type="button">返回当前会话</button></div>
+<label id="run-select-label" class="run-picker" hidden>查看运行<select id="run-select" aria-label="选择运行"></select></label>
+<div id="result-panel"></div>
+<section class="history"><div class="row"><h2>会话记录 <span id="count">0</span></h2><button id="export" class="small" disabled>导出记录</button></div><p id="all-usage" class="note"></p><input id="search" type="search" placeholder="搜索会话、完整型号或供应商" aria-label="搜索已保存会话"><p id="history-status" class="note">读取记录…</p><div id="history-list"></div><button id="more" class="small" hidden>加载更多</button></section>
+<footer class="privacy">仅本机保存 · 只读查询 · 不保存正文<br>开启监听后再发送消息；停止监听不会删除历史记录。</footer>
+<script src="view-model.js"></script><script src="model-label-global.js"></script><script src="billing-global.js"></script><script src="agent-detail-view.js"></script><script src="panel.js"></script><script src="popup.js" type="module"></script><script src="battle-popup.js" type="module"></script><script src="battle-trace-popup.js" type="module"></script>
+</body></html>
