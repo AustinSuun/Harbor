@@ -3,7 +3,7 @@
   const css = `
 .ati{--bg:#111a20;--surface:#172229;--line:#2b3b42;--text:#e8f1f0;--muted:#94a8ae;--green:#9ae9ca;box-sizing:border-box;color:var(--text);font:13px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
 .ati *{box-sizing:border-box}.ati button,.ati summary{font:inherit}.ati button{cursor:pointer}.ati button:disabled{opacity:.4;cursor:default}.ati button:focus-visible,.ati summary:focus-visible{outline:2px solid var(--green);outline-offset:3px}.ati .result{border:1px solid #426957;border-radius:14px;padding:18px;background:linear-gradient(135deg,#172d25,#142322)}
-.ati .eyebrow{font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--green)}.ati .row{display:flex;align-items:center;justify-content:space-between;gap:10px}.ati .source{font-size:10px;padding:3px 8px;border:1px solid #456052;border-radius:20px;color:#bee4d3;white-space:nowrap}.ati .model{font:650 24px/1.28 ui-monospace,Consolas,monospace;letter-spacing:-.6px;margin:13px 0 4px;color:#acf0ce;word-break:break-word}.ati .provider{font-size:12px;color:#b0c8bd;margin-bottom:10px}.ati .provider-kind{margin-bottom:3px;color:#9fb8ad}.ati .extra-model{border-top:1px solid #355044;margin-top:12px;padding-top:4px}.ati .idrow{display:flex;align-items:center;gap:7px;color:#abc2b8;font:11px/1.6 ui-monospace,Consolas,monospace}.ati .idrow code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}.ati .iconbutton,.ati .secondary{border:1px solid #40564f;color:#cce7dc;background:#ffffff06;border-radius:7px;padding:5px 9px;font-size:11px;white-space:nowrap;width:auto}.ati .iconbutton:hover,.ati .secondary:hover{background:#ffffff10}.ati .toplabel{font-size:10px;color:var(--muted);letter-spacing:1.1px;margin:17px 0 9px}.ati .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ati .metric{min-width:0;padding:13px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px}.ati .metric-label{color:#a6b7bb;font-size:11px}.ati .metric-value{font:600 20px/1.3 ui-monospace,Consolas,monospace;margin-top:5px;color:#edf5f2}.ati .metric-value.state{font:600 14px/1.9 system-ui,sans-serif}.ati .metric-note{color:var(--muted);font-size:10px;margin-top:4px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.ati .footnote{font-size:10px;color:var(--muted);margin:10px 1px 15px}.ati .fold{border:1px solid var(--line);border-radius:10px;background:#141f25;margin-top:9px;overflow:hidden}.ati summary{list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}.ati summary::-webkit-details-marker{display:none}.ati summary:after{content:'+';font-size:17px;color:#a1b7b7;font-weight:400}.ati details[open]>summary:after{content:'−'}.ati .count{margin-left:auto;font-size:10px;font-weight:400;color:var(--muted);padding-right:5px}.ati .fold-body{border-top:1px solid var(--line);padding:13px}.ati .call+.call{border-top:1px solid var(--line);padding-top:13px;margin-top:13px}.ati .call-title{font-size:12px;font-weight:650;color:#d8ece4}.ati .call-index{font:11px ui-monospace,Consolas,monospace;color:var(--green);margin-right:7px}.ati .call-state{font-size:10px;color:var(--muted)}.ati .call-sub{color:var(--muted);font-size:11px;margin:5px 0 8px}.ati .call-metrics{display:flex;gap:15px;font-size:12px;margin:8px 0;color:#c4dcd1}.ati .evidence-intro{color:#9ab3b8;font-size:11px;margin:0 0 14px}.ati .evidence-item{border-left:2px solid #466a5a;padding:2px 0 2px 10px;margin:12px 0}.ati .evidence-label{font-size:11px;color:#9eb7ac}.ati .evidence-value{font:12px/1.6 ui-monospace,Consolas,monospace;color:#d9eddf;white-space:pre-wrap}.ati .path{font:10px/1.55 ui-monospace,Consolas,monospace;color:#8da1a8;overflow-wrap:anywhere;margin-top:3px}.ati .legacy{background:#29281f;border:1px solid #514b33;border-radius:8px;padding:10px 12px;font-size:11px;color:#d3c9a8;line-height:1.7}.ati .evidence-actions{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.ati .empty{padding:8px 0;font-size:12px;color:var(--muted)}.ati .notice{font-size:11px;min-height:18px;color:#9ae9ca;margin-top:8px}.ati .checked{color:#8fa49e;font-size:10px;margin:9px 0 0}.ati .model-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}.ati .rename-status{font-size:11px;color:#9ae9ca;margin:7px 0;white-space:normal}.ati .rename-status:empty{display:none}.ati .rename-status[data-error="true"]{color:#e6c598}.ati .caption{font-size:10px;color:var(--muted)}
+.ati .eyebrow{font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--green)}.ati .row{display:flex;align-items:center;justify-content:space-between;gap:10px}.ati .source{font-size:10px;padding:3px 8px;border:1px solid #456052;border-radius:20px;color:#bee4d3;white-space:nowrap}.ati .model{font:650 24px/1.28 ui-monospace,Consolas,monospace;letter-spacing:-.6px;margin:13px 0 4px;color:#acf0ce;word-break:break-word}.ati .provider{font-size:12px;color:#b0c8bd;margin-bottom:10px}.ati .provider-kind{margin-bottom:3px;color:#9fb8ad}.ati .model-layers{margin:2px 0 10px;padding:8px 10px;border:1px solid #2f4a42;border-radius:8px;background:#0f1c21}.ati .model-layer{display:flex;flex-wrap:wrap;gap:1px 8px;font-size:11px;line-height:1.7;padding:2px 0}.ati .model-layer+.model-layer{border-top:1px solid #233832;padding-top:5px;margin-top:3px}.ati .model-layer dt{color:#8fa8a2;flex:0 0 auto;margin:0}.ati .model-layer dd{margin:0;color:#d6ece2;font-family:ui-monospace,Consolas,monospace;word-break:break-all;flex:1;min-width:0}.ati .model-layer-note{flex:0 0 100%;color:#8d9c98;font-size:10px}.ati .notice-model-change{margin:6px 0 2px;padding:7px 10px;border:1px solid #5a4c2f;border-radius:8px;background:#241f14;color:#e0c489;font-size:11px;line-height:1.65;overflow-wrap:anywhere}.ati .model-catalog{margin:2px 0 10px;padding:8px 10px;border:1px solid #35544a;border-radius:8px;background:#101f1c}.ati .model-catalog-head{font-size:10px;letter-spacing:.9px;color:#7fc6b0;margin-bottom:5px;overflow-wrap:anywhere}.ati .extra-model{border-top:1px solid #355044;margin-top:12px;padding-top:4px}.ati .idrow{display:flex;align-items:center;gap:7px;color:#abc2b8;font:11px/1.6 ui-monospace,Consolas,monospace}.ati .idrow code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}.ati .iconbutton,.ati .secondary{border:1px solid #40564f;color:#cce7dc;background:#ffffff06;border-radius:7px;padding:5px 9px;font-size:11px;white-space:nowrap;width:auto}.ati .iconbutton:hover,.ati .secondary:hover{background:#ffffff10}.ati .toplabel{font-size:10px;color:var(--muted);letter-spacing:1.1px;margin:17px 0 9px}.ati .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ati .metric{min-width:0;padding:13px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px}.ati .metric-label{color:#a6b7bb;font-size:11px}.ati .metric-value{font:600 20px/1.3 ui-monospace,Consolas,monospace;margin-top:5px;color:#edf5f2}.ati .metric-value.state{font:600 14px/1.9 system-ui,sans-serif}.ati .metric-note{color:var(--muted);font-size:10px;margin-top:4px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.ati .footnote{font-size:10px;color:var(--muted);margin:10px 1px 15px}.ati .fold{border:1px solid var(--line);border-radius:10px;background:#141f25;margin-top:9px;overflow:hidden}.ati summary{list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}.ati summary::-webkit-details-marker{display:none}.ati summary:after{content:'+';font-size:17px;color:#a1b7b7;font-weight:400}.ati details[open]>summary:after{content:'−'}.ati .count{margin-left:auto;font-size:10px;font-weight:400;color:var(--muted);padding-right:5px}.ati .fold-body{border-top:1px solid var(--line);padding:13px}.ati .call+.call{border-top:1px solid var(--line);padding-top:13px;margin-top:13px}.ati .call-title{font-size:12px;font-weight:650;color:#d8ece4}.ati .call-index{font:11px ui-monospace,Consolas,monospace;color:var(--green);margin-right:7px}.ati .call-state{font-size:10px;color:var(--muted)}.ati .call-sub{color:var(--muted);font-size:11px;margin:5px 0 8px}.ati .call-metrics{display:flex;gap:15px;font-size:12px;margin:8px 0;color:#c4dcd1}.ati .evidence-intro{color:#9ab3b8;font-size:11px;margin:0 0 14px}.ati .evidence-item{border-left:2px solid #466a5a;padding:2px 0 2px 10px;margin:12px 0}.ati .evidence-label{font-size:11px;color:#9eb7ac}.ati .evidence-value{font:12px/1.6 ui-monospace,Consolas,monospace;color:#d9eddf;white-space:pre-wrap}.ati .path{font:10px/1.55 ui-monospace,Consolas,monospace;color:#8da1a8;overflow-wrap:anywhere;margin-top:3px}.ati .legacy{background:#29281f;border:1px solid #514b33;border-radius:8px;padding:10px 12px;font-size:11px;color:#d3c9a8;line-height:1.7}.ati .evidence-actions{display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px;margin-top:12px}.ati .empty{padding:8px 0;font-size:12px;color:var(--muted)}.ati .notice{font-size:11px;min-height:18px;color:#9ae9ca;margin-top:8px}.ati .checked{color:#8fa49e;font-size:10px;margin:9px 0 0}.ati .model-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}.ati .rename-status{font-size:11px;color:#9ae9ca;margin:7px 0;white-space:normal}.ati .rename-status:empty{display:none}.ati .rename-status[data-error="true"]{color:#e6c598}.ati .caption{font-size:10px;color:var(--muted)}
 `;
   const balanceCss = `.ati .quota{border:1px solid #2e4a40;border-radius:14px;background:linear-gradient(160deg,#152522,#111b1f);margin:0 0 12px;overflow:hidden}
 .ati .quota-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid #24383a}.ati .quota-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80aa;flex-shrink:0}.ati .quota-dot[data-tone=warn]{background:#fbbf24;box-shadow:0 0 8px #fbbf24aa}.ati .quota-dot[data-tone=low]{background:#f87171;box-shadow:0 0 8px #f87171aa}.ati .quota-dot[data-tone=none]{background:#6b7f7c;box-shadow:none}
@@ -34,6 +34,34 @@
       const message=root.querySelector('.rename-status');if(message){message.textContent=renameMessage;message.dataset.error=String(renameFailed);}
     }
     let balance=null;
+    // The trace's own accounting outranks the endpoint read: arena.ai retired /api/billing/balance,
+    // and spend.recorded is written server-side every run. The API value stays as the fallback.
+    let traceCard=null;
+    // Directory facts are fetched per model name and kept for the life of this panel; a name the
+    // directory does not know is cached as null so it is never asked for twice.
+    const catalogCache=new Map();let catalogInflight=false,catalogError='';
+    const sameName=(a,b)=>String(a||'').toLowerCase().replace(/[^a-z0-9]/g,'')===String(b||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    function ensureCatalog(view){
+      if(!options.getCatalog||catalogInflight)return;
+      const names=[...new Set(view.models.map(m=>m.model))].filter(n=>n&&!catalogCache.has(n));
+      if(!names.length)return;
+      catalogInflight=true;
+      Promise.resolve(options.getCatalog(names.slice(0,20))).then(result=>{
+        const rows=result?.rows;
+        if(rows&&typeof rows==='object')for(const name of names)catalogCache.set(name,Array.isArray(rows[name])&&rows[name].length?rows[name]:null);
+        else for(const name of names)catalogCache.set(name,null);
+        if(result?.error)catalogError=result.error;else catalogError='';
+      }).catch(()=>{for(const name of names)catalogCache.set(name,null);})
+        .finally(()=>{catalogInflight=false;if(currentView)render(currentView);});
+    }
+    function catalogBlock(rows){
+      const block=el('div','model-catalog');
+      block.append(el('div','model-catalog-head','模型目录（公开）'+(catalogError?' · '+catalogError:'')));
+      const list=el('dl','model-layers');
+      for(const row of rows){const item=el('div','model-layer');item.append(el('dt','',row.label),el('dd','',row.value));list.append(item);}
+      block.append(list);
+      return block;
+    }
     async function renameModel(model,view){
       if(renameBusy)return;renameBusy=true;renameMessage='';renameFailed=false;renameView=view;updateRename();
       try{const result=await options.onRename(model,view);if(currentView?.runId===view.runId&&currentView?.sessionId===view.sessionId)renameMessage=(result?.unchanged?'当前对话已命名为：':'已重命名为：')+(result?.title||model);}
@@ -41,18 +69,40 @@
       finally{renameBusy=false;updateRename();}
     }
     function render(view) {
-      currentView=view;if(renameView&&(renameView.runId!==view.runId||renameView.sessionId!==view.sessionId)){renameMessage='';renameFailed=false;}
+      currentView=view;ensureCatalog(view);if(renameView&&(renameView.runId!==view.runId||renameView.sessionId!==view.sessionId)){renameMessage='';renameFailed=false;}
 
       const sameRun=lastRun===view.runId;const opens=sameRun?[...root.querySelectorAll('details[open]')].map(x=>x.dataset.section):[];lastRun=view.runId;
       root.replaceChildren();
       const notice=el('div','notice');notice.setAttribute('role','status');notice.setAttribute('aria-live','polite');
-      const result=el('article','result');const top=el('div','row');top.append(el('div','eyebrow',view.models.some(m=>m.internal)?'模型（Arena 内部名）':'服务端模型标签'),el('span','source',view.source));result.append(top);
+      const result=el('article','result');const top=el('div','row');top.append(el('div','eyebrow',view.models.some(m=>m.internal)?'模型（Arena 内部名）':view.models.some(m=>m.matched)?'模型（Trigger.dev 计价匹配）':'服务端模型标签'),el('span','source',view.source));result.append(top);
       if(!view.models.length){result.append(el('h2','model','模型待确认'),el('div','provider',view.runId?'等待本次 trace 返回模型标签':'开启监听后发送消息，或查看本地会话记录'));}
+      // A run whose turns landed on different models is stated outright rather than left for the
+      // reader to notice from two titles.
+      if(view.models.length>1)result.append(el('p','notice-model-change','本次调用出现 '+view.models.length+' 个不同模型（按出现顺序）：'+view.models.map(m=>m.model).join(' → ')));
       for(const [i,m] of view.models.entries()){
         const group=el('div',i?'extra-model':'');const row=el('div','row');row.append(el('h2','model',m.model));group.append(row);
-        // Two lines under the title when the internal name is shown: ① what the title is, ② the server label + provider.
-        if(m.internal)group.append(el('div','provider provider-kind','Arena 内部 modelName'),el('div','provider','服务端标签 '+m.serverLabel+' · '+(m.provider||'供应商未提供')));
-        else group.append(el('div','provider',m.provider||'供应商未提供'));
+        // Which source the title came from -- only stated when it is not the server label itself.
+        // Records saved before 2.1.0 carry internal:true with no nameSource; read those as the
+        // confirmed match they were, so old history keeps rendering exactly as it did.
+        const kind=m.internal&&m.nameSource!=='internal-only'?'Arena 内部 modelName'
+          :m.nameSource==='internal-only'?'Arena 内部 modelName · 与标签主干不一致，按内部名为准'
+          :m.nameSource==='trigger-matched'?'Trigger.dev 计价匹配 · 非 Arena 声明，也非权重证明':null;
+        if(kind)group.append(el('div','provider provider-kind',kind));
+        // One block listing every remaining layer. A row whose value is already the title is
+        // dropped -- but its note (the tier reading, say) moves up beside the title instead of
+        // being lost, so nothing the run exposed disappears silently.
+        const list=el('dl','model-layers');
+        const put=(label,value,note)=>{const item=el('div','model-layer');item.append(el('dt','',label),el('dd','',value));if(note)item.append(el('div','model-layer-note',note));list.append(item);};
+        put('服务端标签',(m.serverLabel||m.model)+' · '+(m.provider||'供应商未提供'));
+        if(view.models.length===1)for(const layer of view.layers||[]){
+          if(sameName(layer.value,m.model)){if(layer.note)group.append(el('div','provider provider-kind',layer.note));continue;}
+          put(layer.label,layer.value+(layer.conflict?' · 各轮不一致':''),layer.note);
+        }
+        group.append(list);
+        // Directory facts about this model: what it is, where it ranks, what it can do. Fetched
+        // once per name from the page's own text-route payload; absent for the draw-only pool.
+        const catalog=view.models.length===1?catalogCache.get(m.model):undefined;
+        if(catalog&&catalog.length)group.append(catalogBlock(catalog));
         result.append(group);
       }
       if(options.onRename){
@@ -70,7 +120,11 @@
       }
       if(view.runId){const row=el('div','idrow run-meta');row.append(el('span','','run'));const code=el('code','',view.runId);code.title=view.runId;row.append(code);result.append(row,el('div','checked','记录时间 · '+date(view.checkedAt)));}
       if(options.onRename&&view.models.length){const renameStatus=el('div','rename-status');renameStatus.setAttribute('role','status');renameStatus.setAttribute('aria-live','polite');result.append(renameStatus);}
-      if(balance&&!balanceHost)root.append(quotaCard());root.append(result,el('div','toplabel',view.historical&&view.runId?'所选历史运行 · 已捕获指标':'本次运行 · 已捕获指标'));
+      const nextTrace=view.quotaCard||null;
+      const changed=!!nextTrace!==!!traceCard||(nextTrace&&traceCard&&nextTrace.value!==traceCard.value);
+      traceCard=nextTrace;
+      if(balanceHost){if(changed)balanceHost.replaceChildren(quotaCard(true));}
+      else if(traceCard||balance)root.append(quotaCard());root.append(result,el('div','toplabel',view.historical&&view.runId?'所选历史运行 · 已捕获指标':'本次运行 · 已捕获指标'));
       // 2x2 grid, reading order: 状态 (completion + the live background status as its note) → 调用次数 → Token → trace 费用.
       // The note is clamped to two lines by CSS; the full text is always in the title.
       const metrics=el('div','metrics');const statusNote=typeof view.statusText==='string'?view.statusText.trim():'';
@@ -128,7 +182,7 @@
     // compact=true (HUD top row): ring + remaining/total + refresh time only; the other rows, the source note and any error text go into the tooltip.
     const SVG='http://www.w3.org/2000/svg',R=46,C=2*Math.PI*R,SOURCE='来源 arena.ai/api/billing/balance · credits 口径，不换算美元';
     function quotaCard(compact=false){
-      const b=balance||{};const tone=b.tone||'none';const rows=b.rows||[];const card=el('section','quota'+(compact?' compact':''));card.setAttribute('aria-label','账号额度');
+      const b=traceCard||balance||{};const tone=b.tone||'none';const rows=b.rows||[];const card=el('section','quota'+(compact?' compact':''));card.setAttribute('aria-label','账号额度');
       let refresh=null;if(b.onRefresh){refresh=el('button','quota-refresh'+(b.loading?' spin':''),'↻');refresh.type='button';refresh.title='重新读取 arena.ai/api/billing/balance';refresh.setAttribute('aria-label','刷新额度');refresh.disabled=!!b.loading;refresh.addEventListener('click',()=>b.onRefresh());}
       const ring=el('div','quota-ring');ring.dataset.tone=tone;
       const svg=document.createElementNS(SVG,'svg');svg.setAttribute('viewBox','0 0 104 104');
@@ -137,10 +191,16 @@
       ring.append(svg,pct);
       const main=el('div','quota-main');const big=el('div','quota-big',b.short||'—');big.append(el('span','','/ '+(b.total||'—')));
       if(compact){
-        const refreshed=rows.find(r=>r[0]==='刷新')?.[1];
-        const sub=el('div','quota-sub',b.error?b.error:refreshed?'刷新 '+refreshed:b.loading?'读取中…':'未读取');if(b.error)sub.dataset.error='true';
+        // 下次额度重置 is a *future* instant -- measured ~22 h ahead of the read time and pinned
+        // across reads -- so it legitimately never moves. 读取 is when this extension last read the
+        // endpoint. Labelling the first "刷新" made a value that cannot change look like a stale read.
+        const reset=rows.find(r=>r[0]==='下次额度重置')?.[1];
+        const tier=rows.find(r=>r[0]==='额度档位')?.[1];
+        const read=String(rows.find(r=>r[0]==='读取')?.[1]||'').split(' (')[0];
+        const line=[tier?'档位 '+tier:'',reset?'下次重置 '+reset:'',read?'读取 '+read:''].filter(Boolean).join(' · ');
+        const sub=el('div','quota-sub',b.error?b.error:line||(b.loading?'读取中…':'未读取'));if(b.error)sub.dataset.error='true';
         main.append(big,sub);card.append(ring,main);if(refresh)card.append(refresh);
-        card.title=['账号额度',...rows.map(([k,v])=>k+' '+v),b.error||'',SOURCE].filter(Boolean).join(' · ');
+        card.title=['账号额度',...rows.map(([k,v])=>k+' '+v),b.error||'',b.source||SOURCE].filter(Boolean).join(' · ');
         return card;
       }
       const head=el('div','quota-head');const dot=el('span','quota-dot');dot.dataset.tone=tone;head.append(dot,el('div','quota-title','账号额度'));if(refresh)head.append(refresh);

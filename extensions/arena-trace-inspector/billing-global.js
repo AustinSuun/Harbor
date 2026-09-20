@@ -8,8 +8,8 @@
     const n = v => typeof v === 'number' ? v.toLocaleString('zh-CN') : '未提供';
     const pct = typeof b.creditsRemaining === 'number' && typeof b.dailyFreeCredits === 'number' && b.dailyFreeCredits > 0 ? Math.round(b.creditsRemaining / b.dailyFreeCredits * 1000) / 10 : null;
     const tone = pct === null ? 'none' : pct >= 50 ? 'good' : pct >= 20 ? 'warn' : 'low';
-    const rows = [['剩余', n(b.creditsRemaining) + ' / ' + n(b.dailyFreeCredits)], ['刷新', stamp(b.refreshedAt)], ['读取', stamp(b.receivedAt) + (typeof b.latencyMs === 'number' ? ' (' + b.latencyMs + 'ms)' : '')]];
-    return {value: n(b.creditsRemaining) + (pct !== null ? ' · ' + pct + '%' : ''), note: '每日额度 ' + n(b.dailyFreeCredits) + ' credits' + (b.refreshedAt ? ' · 刷新于 ' + stamp(b.refreshedAt) : ''), short: shortNumber(b.creditsRemaining), total: shortNumber(b.dailyFreeCredits), pct, tone, rows};
+    const rows = [['剩余', n(b.creditsRemaining) + ' / ' + n(b.dailyFreeCredits)], ['下次额度重置', stamp(b.refreshedAt)], ['读取', stamp(b.receivedAt) + (typeof b.latencyMs === 'number' ? ' (' + b.latencyMs + 'ms)' : '')]];
+    return {value: n(b.creditsRemaining) + (pct !== null ? ' · ' + pct + '%' : ''), note: '每日额度 ' + n(b.dailyFreeCredits) + ' credits' + (b.refreshedAt ? ' · 下次额度重置于 ' + stamp(b.refreshedAt) : ''), short: shortNumber(b.creditsRemaining), total: shortNumber(b.dailyFreeCredits), pct, tone, rows};
   }
   globalThis.ArenaBilling = {formatBalance, shortNumber};
 })();

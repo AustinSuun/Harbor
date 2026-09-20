@@ -127,10 +127,10 @@ def main():
     # Record package versions, but not usernames, machine paths or account data.
     versions=json.loads(subprocess.check_output([str(python),'-c',
         "import importlib.metadata as m,json; print(json.dumps({n:m.version(n) for n in ['playwright','fastapi','uvicorn','pydantic','pyinstaller']}))"],text=True))
-    manifest={'application':'Harbor','application_version':'0.3.11','platform':'Windows x64','created_at':stamp,
+    manifest={'application':'Harbor','application_version':'0.3.12','platform':'Windows x64','created_at':stamp,
               'dependencies':versions,'browser_folders':[p.name for p in bundle.iterdir()],
               'native_libraries':[p.name for p in native_dlls],
-              'plugins':True,'plugin_loading_support':{'yescaptcha':'automatic-all-environments','trace_inspector':'automatic-all-environments','default_enabled':True,'third_party_plugin_bundled':True,'yescaptcha_bundled':False,'yescaptcha_install':'official-pinned-first-launch','yescaptcha_key':'local-encrypted-global-next-launch','temporary_mode':'disposable-profile','trace_inspector_bundled_version':'2.0.0'},
+              'plugins':True,'plugin_loading_support':{'yescaptcha':'automatic-all-environments','trace_inspector':'automatic-all-environments','default_enabled':True,'third_party_plugin_bundled':True,'yescaptcha_bundled':False,'yescaptcha_install':'official-pinned-first-launch','yescaptcha_key':'local-encrypted-global-next-launch','temporary_mode':'disposable-profile','trace_inspector_bundled_version':'2.3.0'},
               'workspace_html_capture':True,'candidate_html_line_limit':150,'thinking_auto_stop':False,
               'thinking_stop_support':'experimental-opt-in','auto_archive_support':'experimental-opt-in',
               'update_support':'windows-side-by-side','mac_support':'source-preview',

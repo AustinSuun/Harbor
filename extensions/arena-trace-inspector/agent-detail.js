@@ -25,6 +25,9 @@ const FIELDS = {
     apiModelName: ['ai.telemetry.metadata.apiModelName', label], requestModel: ['gen_ai.request.model', label], genResponseModel: ['gen_ai.response.model', label],
     temperature: ['ai.settings.temperature', number], maxOutputTokens: ['ai.settings.maxOutputTokens', count], topP: ['ai.settings.topP', number],
     finishReason: ['ai.response.finishReason', label], responseId: ['ai.response.id', label],
+    // Trigger.dev's own LLM instrumentation names the model it priced the call as. That is a
+    // third-party attribution, not Arena's declaration, so the UI must say which one it shows.
+    matchedModel: ['trigger.llm.matched_model', label],
     inputTokens: ['ai.usage.inputTokens', count], outputTokens: ['ai.usage.outputTokens', count], totalTokens: ['ai.usage.totalTokens', count], reasoningTokens: ['ai.usage.reasoningTokens', count]
   },
   usage: {

@@ -7,6 +7,20 @@
   let prompt='1+1=',keepOnly=false;
   const prefsApi=()=>globalThis.ArenaDrawPrefs||null;
   const visible=e=>!!e?.isConnected&&e.getClientRects().length>0;
+  // Arena's mode trigger reads "Agent" while its option still reads "Agent ModeBuilt for complex tasks" (observed 2026-09-18).
+  // Both are matched on the shared prefix, so a copy change on either side cannot break a run again.
+  const MODE_PREFIX='Agent';
+  const isMode=e=>e.textContent.trim().startsWith(MODE_PREFIX);
+  const isDisabled=e=>e.hasAttribute('data-disabled')||e.getAttribute('aria-disabled')==='true';
+  const combos=()=>[...document.querySelectorAll('button[role="combobox"]')].filter(visible);
+  const modeReady=()=>combos().some(isMode);
+  // Radix Select opens on pointerdown; a bare click() never opens it, so the menu stayed empty and the run timed out.
+  function press(el){
+    const o={bubbles:true,cancelable:true,composed:true,button:0,pointerId:1,pointerType:'mouse',isPrimary:true};
+    el.dispatchEvent(new PointerEvent('pointerdown',{...o,buttons:1}));
+    el.dispatchEvent(new PointerEvent('pointerup',{...o,buttons:0}));
+    el.dispatchEvent(new MouseEvent('click',{...o,buttons:0}));
+  }
   const session=()=>location.pathname.match(/^\/agent\/([a-zA-Z0-9-]{1,128})\/?$/)?.[1]||null;
   const status=()=>({running,phase,progress,sent,sessionId,total,round,completed,failed,archived,prompt,keepOnly});
   const publish=(p,text)=>{phase=p;progress=text;notify(status());};
@@ -27,11 +41,11 @@
     await wait(()=>editors().length===1,'等待新聊天输入框超时');noDraft(allowPrompt);
   }
   async function mode(){
-    const combo=await wait(()=>[...document.querySelectorAll('button[role="combobox"]')].find(visible),'未找到模式选择器');
-    if(!combo.textContent.includes('Agent Mode')){
-      combo.click();const option=await wait(()=>[...document.querySelectorAll('[role="option"]')].find(e=>visible(e)&&/^Agent Mode(?:Built for complex tasks)?$/.test(e.textContent.trim())&&!e.hasAttribute('data-disabled')),'未找到 Agent Mode 选项');option.click();
-    }
-    await wait(()=>[...document.querySelectorAll('button[role="combobox"]')].some(e=>visible(e)&&e.textContent.trim()==='Agent Mode'),'未能确认 Agent Mode');
+    if(modeReady())return;
+    const combo=await wait(()=>combos()[0],'未找到模式选择器');
+    press(combo);
+    const option=await wait(()=>[...document.querySelectorAll('[role="option"]')].find(e=>visible(e)&&isMode(e)&&!isDisabled(e)),'未找到 Agent Mode 选项');press(option);
+    await wait(modeReady,'未能确认 Agent Mode');
   }
   async function nextBlank(){
     await newChat(true);await mode();guard();
@@ -93,7 +107,7 @@
       }
       const button=await wait(()=>[...document.querySelectorAll('button[aria-label="Send message"]')].find(b=>visible(b)&&!b.disabled),'发送按钮不可用；未发送');
       guard();if(editorText(editor)!==prompt||session())throw Error('输入或页面已变化；未发送');
-      if(![...document.querySelectorAll('button[role="combobox"]')].some(b=>b.textContent.trim()==='Agent Mode'))throw Error('模式已变化；未发送');
+      if(!modeReady())throw Error('模式已变化；未发送');
       await requireListening();guard();if(session())throw Error('页面已变化，未发送');
       sent=true;publish('detect',`${round}/${total} · 已发送「${prompt.length>20?prompt.slice(0,20)+'…':prompt}」，等待完成检测（最多 180 秒）`);button.click();
       try{sessionId=await wait(()=>session(),'发送后未确认新会话；不重发',30000);}catch(e){throw e?.fatal?e:fatal(e?.message||'发送后未确认新会话；不重发');}
@@ -117,12 +131,13 @@
         }
       }
       guard();
+      // Always let span detail land before touching the chat. Renaming or navigating away invalidates
+      // the pending detail read, which is why the Arena internal name only ever appeared after a
+      // second message. Bounded at 20 s; a slow read only delays, it never fails the round.
+      publish('detail',`${round}/${total} · 检测完成，等待 span 详情以补全模型信息（最多 20 秒）`);
+      try{detected=await wait(()=>{const r=detectCheck();return r&&!r.state.detailPending?r:null;},'detail-timeout',20000);}catch(e){if(e?.message!=='detail-timeout')throw e;detected=detectCheck()||detected;}
+      guard();
       if(keepOnly){
-        // Decide on the Arena internal name when it is available: give span detail up to 20 s to arrive (the title is then
-        // e.g. gpt-6-astra-low instead of gpt-6-astra). Either layer is accepted by shouldKeep, so a slow read only delays.
-        publish('detail',`${round}/${total} · 检测完成，等待 span 详情以判断模型（最多 20 秒）`);
-        try{detected=await wait(()=>{const r=detectCheck();return r&&!r.state.detailPending?r:null;},'detail-timeout',20000);}catch(e){if(e?.message!=='detail-timeout')throw e;detected=detectCheck()||detected;}
-        guard();
         const keep=prefsApi()?prefsApi().shouldKeep(detected.view.models):true;
         if(!keep){
           const label=detected.view.models[0].model;
@@ -162,9 +177,8 @@
       if(!halted)publish('done',`抽卡结束：成功 ${completed} 轮${keepOnly?`（归档 ${archived} 个非保留模型）`:''}，跳过 ${failed} 轮；不再自动发送`);
     }catch(e){publish(cancelled?'stopped':'skipped',e?.message||'自动抽卡已停止');}
     finally{
-      if(ownListening&&location.origin==='https://arena.ai'&&(!sessionId||session()===sessionId||!session())){
-        try{await listen(false);}catch{progress+='；停止监听失败，请手动停止';}
-      }
+      // Listening is deliberately left on when the run ends: the last round's span detail is still
+      // being read, and turning capture off here also cost the user a manual re-arm every run.
       running=false;notify(status());
     }
     return status();

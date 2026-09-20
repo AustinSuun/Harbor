@@ -1,8 +1,9 @@
 (() => {
-  let host,panel,status,dot,compactDot,shell,content,compact,compactName,compactToken,compactCost,compactCount,compactStatus,compactBalance,expandButton,listenButton,balanceHost;
+  let host,panel,status,dot,compactDot,shell,content,compact,compactName,expandButton,listenButton,balanceHost;
   let balanceInfo=null,balanceError='',balanceLoading=false,balanceRunKey='';
   let requestVersion=0,displayedSession=null,latestState=null,retryTimer;
   let prefs,loadedPrefs=false,interactionVersion=0,drag=null,sizeObserver=null,layoutError='',listenError='',listenPending=false,pageKey=location.pathname;
+  // Stays false until the stored preference arrives: claiming before that would act on a guess.
   let autoRename=false,autoLoaded=false,autoPending=false,autoChecking=false,deletePending=false,archivePending=false;
   let drawStart,drawStop,drawStatus,drawRounds,drawMenu,drawMenuButton,drawMenuOpen=false;
   let drawRoundValue=5;
@@ -37,8 +38,7 @@
     finally{balanceLoading=false;paintBalance();}
   }
   function paintBalance(){
-    if(!compactBalance)return;const f=globalThis.ArenaBilling?.formatBalance(balanceInfo)||{value:'未提供',note:''};
-    compactBalance.textContent=balanceLoading&&!balanceInfo?'读取中…':f.value;compactBalance.title=(f.note||'')+(balanceError?' · '+balanceError:'')+' · 来源 arena.ai/api/billing/balance';
+    const f=globalThis.ArenaBilling?.formatBalance(balanceInfo)||{value:'未提供',note:''};
     panel?.setBalance?.({...f,loading:balanceLoading,error:balanceError,onRefresh:()=>void loadBalance(true)});
   }
   async function loadAutoRename(){
@@ -78,6 +78,9 @@
   }
   async function archiveCurrentChat(view){
     if(drawing()||archivePending||deletePending||autoChecking||ArenaConversationRename.isBusy()||view.sessionId!==currentSession())return;
+    // ATI_ARCHIVE_PREPARE detaches this tab's capture, so a manual archive used to leave listening
+    // switched off until the user re-armed it by hand. Remember the state and restore it below.
+    const wasListening=latestState?.enabled===true;
     archivePending=true;repaint();let archived=false;
     try{
       const prep=await chrome.runtime.sendMessage({type:'ATI_ARCHIVE_PREPARE',sessionId:view.sessionId,pageUrl:location.href});
@@ -88,7 +91,13 @@
       if(!removed?.ok)throw Error(removed?.error||'本地记录清理失败');
       listenError='聊天已归档，本地记录已删除';
     }catch(e){listenError=archived?'聊天已归档，但本地记录清理失败；请在扩展会话列表删除记录':(e?.message||'归档失败，本地记录保留');}
-    finally{archivePending=false;repaint();}
+    finally{
+      archivePending=false;
+      if(wasListening&&location.origin==='https://arena.ai'){
+        try{await chrome.runtime.sendMessage({type:'ATI_SET_LISTENING',enabled:true,pageUrl:location.href});}catch{}
+      }
+      repaint();
+    }
   }
   const currentSession=()=>location.pathname.match(/^\/agent\/([a-zA-Z0-9-]{1,128})\/?$/)?.[1]||null;
   const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;};
@@ -101,7 +110,6 @@
     // HUD-local messages (listen/rename/archive/delete errors, layout save errors) stay next to the listen button;
     // the background pipeline status (latestState.status) is rendered inside the 状态 metric card by panel.render.
     if(status){const text=[listenError,layoutError].filter(Boolean).join(' · ');status.textContent=text;status.hidden=!text;}
-    if(compactStatus)compactStatus.title=(latestState?.status||'')+(layoutError?' · '+layoutError:'');
   }
   async function savePrefs(){
     try{const result=await chrome.runtime.sendMessage({type:'ATI_HUD_SAVE',prefs});if(result?.error||!result?.prefs)throw Error('save failed');layoutError='';}
@@ -181,12 +189,15 @@
     const root=host.attachShadow({mode:'closed'}),style=el('style');
     style.textContent=`
 :host{all:initial}.shell{box-sizing:border-box;width:370px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;border:1px solid #3b554a;border-radius:15px;background:#111a20;color:#e8f1f0;font:12px/1.55 system-ui,sans-serif;box-shadow:0 12px 48px #0007;overflow:hidden}.shell *{box-sizing:border-box}[hidden]{display:none!important}.header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #2b3b42;flex-shrink:0}.header strong{font-size:12px;flex:1}.drag-handle{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}.drag-handle:active{cursor:grabbing}.dot{width:6px;height:6px;border-radius:50%;background:#92e4b9;flex-shrink:0}button{font:12px system-ui,sans-serif;border:1px solid #3b5147;border-radius:6px;background:transparent;color:#bce7d0;cursor:pointer;padding:3px 8px}button:focus-visible,.drag-handle:focus-visible{outline:2px solid #9ae9ca;outline-offset:-3px}.content{min-height:0;max-height:70vh;overflow:auto;padding:13px}.header{position:relative}.draw-menu-button{padding:3px 9px;white-space:nowrap;font-variant-numeric:tabular-nums}.draw-menu-button[aria-expanded="true"]{background:#ffffff12}.draw-menu-button.active{border-color:#5f9a85;background:#235b4b;color:#e3fff1;font-weight:650}.draw-menu{position:absolute;top:calc(100% + 6px);right:12px;z-index:5;width:288px;max-width:calc(100% - 24px);padding:12px 13px 11px;border:1px solid #3d5a50;border-radius:11px;background:#17242b;box-shadow:0 14px 36px #000a;cursor:default;user-select:text;-webkit-user-select:text}.draw-menu:before{content:'';position:absolute;top:-6px;right:58px;width:10px;height:10px;transform:rotate(45deg);background:#17242b;border-left:1px solid #3d5a50;border-top:1px solid #3d5a50}
-.draw-menu-head{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}.draw-menu-head strong{font-size:12px;color:#d8ece4}.draw-menu-hint{font-size:10px;color:#8fa6a2}.draw-settings{display:flex;flex-direction:column;gap:7px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid #2b3f3a}.draw-prompt-row{display:flex;align-items:center;gap:7px}.draw-prompt-label{font-size:11px;color:#aac1b8;white-space:nowrap}.draw-prompt{flex:1;min-width:0;border:1px solid #3b5147;border-radius:6px;background:#111a20;color:#d6eee2;padding:6px 8px;font:12px system-ui}.draw-prompt:disabled{opacity:.5}.draw-keep{display:flex;align-items:center;gap:6px;font-size:11px;color:#bad9ce;cursor:pointer;user-select:none;-webkit-user-select:none}.draw-keep input{accent-color:#9ae9ca;width:14px;height:14px;margin:0}.draw-controls{display:flex;gap:7px;align-items:center}.draw-rounds-label{font-size:11px;color:#aac1b8;white-space:nowrap}.draw-rounds{width:56px;min-width:48px;border:1px solid #3b5147;border-radius:6px;background:#111a20;color:#d6eee2;padding:6px;font:12px system-ui}.draw-rounds:disabled{opacity:.5}.draw-controls button{padding:6px 10px}.draw-start{border-color:#5f9a85;background:#235b4b;color:#e3fff1;font-weight:650}.draw-stop{color:#f0b3ad;border-color:#78504d}.draw-controls button:disabled{opacity:.4;cursor:default}.draw-status{font-size:10px;line-height:1.6;color:#9bb6ae;margin:9px 0 0;overflow-wrap:anywhere;min-height:16px}.listen-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:8px;align-items:stretch;margin-bottom:10px}.listen-button{min-height:62px;padding:8px 10px;border-color:#5f9a85;border-radius:12px;background:#235b4b;color:#e3fff1;font-size:14px;font-weight:650;letter-spacing:.3px}.listen-button[aria-pressed="true"]{background:#1c3f36;border-color:#3f6e5c;color:#cfeedd}.listen-button:disabled{opacity:.6;cursor:wait}.balance-slot{min-width:0;min-height:62px;display:flex;flex-direction:column;justify-content:stretch}.balance-slot .quota{flex:1}.status{color:#e6c598;font-size:11px;margin:0 0 10px;overflow-wrap:anywhere}.content::-webkit-scrollbar{width:5px}.content::-webkit-scrollbar-thumb{background:#3d5054;border-radius:4px}.shell.collapsed{width:310px;border-color:#3b555b;border-radius:12px;background:#18262b}.collapsed .header{display:none}.compact{padding:13px 16px 15px;overflow:auto}.compact-head{display:flex;align-items:center;gap:10px;min-height:24px;margin-bottom:6px}.compact-title{flex:1;min-width:0;font:500 12px/1.4 system-ui,sans-serif;letter-spacing:.65px;color:#8fd3c9}
-.compact-name{min-width:0;margin-bottom:11px;font:700 20px/1.35 system-ui,sans-serif;color:#b0f0de;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.expand-button{flex:0 0 auto;width:24px;height:24px;padding:0;font-size:17px;color:#b7d5c7;background:#ffffff04}.compact-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin:0}.compact-field{min-width:0}.compact-field dt{font:600 11px/1.5 system-ui,sans-serif;color:#a7bdbd;margin:0}.compact-field dd{font:700 13px/1.5 system-ui,sans-serif;color:#d8e8e8;overflow-wrap:anywhere;margin:2px 0 0}.compact-field dd.compact-state{font:650 12px/1.625 system-ui,sans-serif;color:#cfdfdf}
+.draw-menu-head{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}.draw-menu-head strong{font-size:12px;color:#d8ece4}.draw-menu-hint{font-size:10px;color:#8fa6a2}.draw-settings{display:flex;flex-direction:column;gap:7px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid #2b3f3a}.draw-prompt-row{display:flex;align-items:center;gap:7px}.draw-prompt-label{font-size:11px;color:#aac1b8;white-space:nowrap}.draw-prompt{flex:1;min-width:0;border:1px solid #3b5147;border-radius:6px;background:#111a20;color:#d6eee2;padding:6px 8px;font:12px system-ui}.draw-prompt:disabled{opacity:.5}.draw-keep{display:flex;align-items:center;gap:6px;font-size:11px;color:#bad9ce;cursor:pointer;user-select:none;-webkit-user-select:none}.draw-keep input{accent-color:#9ae9ca;width:14px;height:14px;margin:0}.draw-controls{display:flex;gap:7px;align-items:center}.draw-rounds-label{font-size:11px;color:#aac1b8;white-space:nowrap}.draw-rounds{width:56px;min-width:48px;border:1px solid #3b5147;border-radius:6px;background:#111a20;color:#d6eee2;padding:6px;font:12px system-ui}.draw-rounds:disabled{opacity:.5}.draw-controls button{padding:6px 10px}.draw-start{border-color:#5f9a85;background:#235b4b;color:#e3fff1;font-weight:650}.draw-stop{color:#f0b3ad;border-color:#78504d}.draw-controls button:disabled{opacity:.4;cursor:default}.draw-status{font-size:10px;line-height:1.6;color:#9bb6ae;margin:9px 0 0;overflow-wrap:anywhere;min-height:16px}.listen-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:8px;align-items:stretch;margin-bottom:10px}.listen-button{min-height:62px;padding:8px 10px;border-color:#5f9a85;border-radius:12px;background:#235b4b;color:#e3fff1;font-size:14px;font-weight:650;letter-spacing:.3px}.listen-button[aria-pressed="true"]{background:#1c3f36;border-color:#3f6e5c;color:#cfeedd}.listen-button:disabled{opacity:.6;cursor:wait}.balance-slot{min-width:0;min-height:62px;display:flex;flex-direction:column;justify-content:stretch}.balance-slot .quota{flex:1}.status{color:#e6c598;font-size:11px;margin:0 0 10px;overflow-wrap:anywhere}.content::-webkit-scrollbar{width:5px}.content::-webkit-scrollbar-thumb{background:#3d5054;border-radius:4px}.shell.collapsed{width:196px;border-color:#3b555b;border-radius:10px;background:#18262b}.collapsed .header{display:none}.compact{padding:6px 8px;overflow:hidden}.compact-head{display:flex;align-items:center;gap:6px;min-height:22px}
+.compact-name{flex:1;min-width:0;font:600 13px/1.35 system-ui,sans-serif;color:#b0f0de;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.expand-button{flex:0 0 auto;width:20px;height:20px;padding:0;font-size:14px;color:#b7d5c7;background:#ffffff04}
 `;
     shell=el('section','shell');shell.setAttribute('aria-label','Arena 模型运行信息');
     const header=el('header','header drag-handle');dot=el('span','dot');
-    const title=el('strong','','Arena · Trace Inspector'),toggle=el('button','collapse-button','收起');toggle.type='button';toggle.setAttribute('aria-expanded','true');toggle.addEventListener('click',()=>setCollapsed(true));
+    // The version is on the title so a page can be checked for a stale content script without
+  // opening the popup: after reloading the extension the page must be refreshed to match.
+  const title=el('strong','','Arena · Trace Inspector'),toggle=el('button','collapse-button','收起');toggle.type='button';toggle.setAttribute('aria-expanded','true');toggle.addEventListener('click',()=>setCollapsed(true));
+    title.title='Arena Trace Inspector v2.3.0';
     header.append(dot,title);
     if(globalThis.ArenaAutoDraw){
       drawMenuButton=el('button','draw-menu-button','自动抽卡');drawMenuButton.type='button';drawMenuButton.setAttribute('aria-haspopup','true');drawMenuButton.setAttribute('aria-expanded','false');drawMenuButton.setAttribute('aria-controls','ati-draw-menu');drawMenuButton.addEventListener('click',()=>setDrawMenu(!drawMenuOpen));
@@ -211,14 +222,12 @@
     }
     header.append(toggle);addDrag(header);header.removeAttribute('title');header.setAttribute('aria-label','浮层标题栏');
     compact=el('section','compact');compact.setAttribute('aria-label','精简模型信息');
-    const compactHead=el('div','compact-head drag-handle');compactDot=el('span','dot compact-dot');const compactTitle=el('div','compact-title','ARENA · TRACE INSPECTOR');compactName=el('div','compact-name drag-handle');addDrag(compactName);expandButton=el('button','expand-button','↗');expandButton.type='button';expandButton.title='展开详细面板';expandButton.setAttribute('aria-label','展开详细面板');expandButton.setAttribute('aria-expanded','false');expandButton.addEventListener('click',()=>setCollapsed(false));compactHead.append(compactDot,compactTitle,expandButton);addDrag(compactHead);
-    const grid=el('dl','compact-grid');
-    const field=(label,name)=>{const wrap=el('div','compact-field');const v=el('dd',name);wrap.append(el('dt','',label),v);grid.append(wrap);return v;};
-    compactToken=field('Token','compact-token');compactCost=field('trace 费用','compact-cost');compactCount=field('次数','compact-count');compactStatus=field('状态','compact-state');compactBalance=field('账户余额','compact-balance');compactBalance.title='arena.ai/api/billing/balance · credits';
-    compact.append(compactHead,compactName,grid);
+    const compactHead=el('div','compact-head drag-handle');compactDot=el('span','dot compact-dot');compactName=el('div','compact-name drag-handle');addDrag(compactName);expandButton=el('button','expand-button','↗');expandButton.type='button';expandButton.title='展开详细面板';expandButton.setAttribute('aria-label','展开详细面板');expandButton.setAttribute('aria-expanded','false');expandButton.addEventListener('click',()=>setCollapsed(false));compactHead.append(compactDot,compactName,expandButton);addDrag(compactHead);
+    compact.append(compactHead);
     content=el('div','content');status=el('p','status');status.setAttribute('role','status');status.hidden=true;const controls=el('div','listen-controls');listenButton=el('button','listen-button','读取状态…');listenButton.type='button';listenButton.disabled=true;listenButton.addEventListener('click',()=>void changeListening());balanceHost=el('div','balance-slot');controls.append(listenButton,balanceHost);content.append(controls,status);
     if(globalThis.ArenaAutoDraw)updateDraw();
-    panel=ArenaTracePanel.create(content,{balanceHost,onArchive:archiveCurrentChat,onDelete:deleteCurrentRecord,onAutoRenameChange:setAutoRename,onRename:(model,view)=>{
+      panel=ArenaTracePanel.create(content,{getCatalog:names=>chrome.runtime.sendMessage({type:'ATI_CATALOG',names,pageUrl:location.href})
+      .then(r=>r||{rows:null,error:''}).catch(()=>({rows:null,error:''})),balanceHost,onArchive:archiveCurrentChat,onDelete:deleteCurrentRecord,onAutoRenameChange:setAutoRename,onRename:(model,view)=>{
       if(archivePending||drawing())throw Error('自动流程正在进行，请稍候');
       const isCurrent=()=>view.sessionId===currentSession()&&latestState?.sessionId===view.sessionId&&latestState?.runId===view.runId&&ArenaTraceView.build(latestState).models.some(m=>m.model===model);
       if(!isCurrent())throw Error('当前对话或模型已变化，请重试');
@@ -237,11 +246,12 @@
     displayedSession=state.sessionId||null;for(const indicator of [dot,compactDot]){indicator.style.background=state.enabled?'#92e4b9':'#d5bd83';indicator.title=state.enabled?'监听中':state.historical?'本地历史 · 未开启监听':'未开启监听';indicator.setAttribute('role','img');indicator.setAttribute('aria-label',indicator.title);}
     const view=ArenaTraceView.build(state);const fullView={...view,sessionId:state.sessionId,statusText:typeof state.status==='string'?state.status:'',autoRename,autoRenamePending:autoPending||archivePending||drawing(),deletePending:deletePending||archivePending||drawing(),archivePending:archivePending||drawing()};panel.render(fullView);void maybeAutoRename(fullView);
     compactName.textContent=view.models.length?[...new Set(view.models.map(m=>m.model))].join(' / '):'模型待确认';compactName.title=compactName.textContent;
-    compactToken.textContent=view.tokens+(view.tokenMissing?' · 部分':'');compactToken.title=view.tokenMissing?'已捕获调用覆盖 '+view.tokenCoverage:'仅已捕获 Token，缩写标为约数';
-    compactCost.textContent=view.cost+(view.costMissing?' · 部分':'');compactCost.title='trace 展示费用，不代表实际账单';compactCount.textContent=view.count;
-    compactStatus.textContent=(view.historical&&view.runId?'历史 · ':'')+(view.runId?view.completion.replace(/^调用/,''):state.enabled?'监听中 · 等待数据':'未开启监听');
     if(globalThis.ArenaAutoDraw)updateDraw();updateListenControl();showSaveStatus();if(created)placeSaved();else if(!drag)keepVisible();loadPrefs();void loadAutoRename();
-    paintBalance();if(created)void loadBalance();else if(!view.historical&&view.runId&&view.completion==='调用已完成'&&!state.detailPending&&balanceRunKey!==view.runId){balanceRunKey=view.runId;void loadBalance(true);}
+    paintBalance();
+    // Trace accounting is authoritative now that arena.ai retired the billing route, so the
+    // endpoint is only consulted while no run has supplied a snapshot yet.
+    if(created){if(!view.quota)void loadBalance();}
+    else if(!view.quota&&!view.historical&&view.runId&&view.completion==='调用已完成'&&!state.detailPending&&balanceRunKey!==view.runId){balanceRunKey=view.runId;void loadBalance(true);}
   }
   window.addEventListener('resize',()=>{if(host?.isConnected&&!drag)placeSaved();});
   chrome.runtime.onMessage.addListener(msg=>{if(msg.type==='ATI_STATE')render(msg.state);});
@@ -272,7 +282,14 @@
   window.addEventListener('pageshow', refresh);
   window.navigation?.addEventListener('navigatesuccess', refresh);
   window.addEventListener('popstate', () => { host?.remove(); host=null; refresh(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  // Coming back to the tab is when a stale reading is most misleading -- someone may have
+  // switched account meanwhile. Re-read if the shown value is older than the cache window.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    refresh();
+    const at = balanceInfo?.receivedAt ? Date.parse(balanceInfo.receivedAt) : NaN;
+    if (!Number.isFinite(at) || Date.now() - at > 60000) void loadBalance(true);
+  });
   // Arena can replace root-level DOM during hydration. Recreate only this view,
   // never a previous conversation's overlay, and never fetch or attach here.
   new MutationObserver(() => {

@@ -20,9 +20,9 @@ async def main():
                 for sw in context.service_workers:
                     if sw.url.startswith('chrome-extension://'):
                         manifest=await sw.evaluate('chrome.runtime.getManifest()');workers.append((sw,manifest))
-                assert {m['version'] for _,m in workers}>={'1.4.7','2.0.0'}
+                assert {m['version'] for _,m in workers}>={'1.4.7','2.3.0'}
                 yes=next(sw for sw,m in workers if m['version']=='1.4.7')
-                trace=next(sw for sw,m in workers if m['version']=='2.0.0')
+                trace=next(sw for sw,m in workers if m['version']=='2.3.0')
                 read="async()=>{const {config}=await chrome.storage.local.get('config');return {key:config.clientKey,autorun:config.autorun,hidden:config.isHideKey,inject:config.allowJsInject}}"
                 first=await yes.evaluate(read);assert first=={'key':'','autorun':False,'hidden':True,'inject':False}
                 await plugins.configure_context(context,'offline-fixture-key')

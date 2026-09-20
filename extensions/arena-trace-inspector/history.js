@@ -96,7 +96,8 @@ export function createAutoRenameStore(area) {
   const enabledKey='ati.autoRename.enabled.v1';
   function enqueue(task){const work=queue.then(task);queue=work.catch(()=>{});return work;}
   return {
-    get:()=>enqueue(async()=>({enabled:(await area.get(enabledKey))[enabledKey]===true})),
+    // Defaults to on: an unset preference means enabled, only an explicit false turns it off.
+    get:()=>enqueue(async()=>({enabled:(await area.get(enabledKey))[enabledKey]!==false})),
     set:enabled=>enqueue(async()=>{if(typeof enabled!=='boolean')throw Error('Invalid preference');await area.set({[enabledKey]:enabled});return {enabled};}),
     // One auto rename per session, plus at most one *upgrade*: a session first named with the server label may be renamed
     // once more when the Arena internal modelName (from span detail) becomes available. Never downgrades, never repeats.
@@ -104,7 +105,7 @@ export function createAutoRenameStore(area) {
       conversationUrl(sessionId);
       const key='ati.autoRename.attempted.v1.'+sessionId;
       const data=await area.get(null);
-      if(data[enabledKey]!==true)return false;
+      if(data[enabledKey]===false)return false;   // unset means enabled, matching get()
       const prev=data[key];
       if(prev){
         const prevInternal=prev&&typeof prev==='object'&&prev.internal===true;

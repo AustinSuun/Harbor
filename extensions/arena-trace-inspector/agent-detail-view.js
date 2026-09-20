@@ -24,6 +24,7 @@
         ['Arena 内部 modelName', fmt(internal) + (typeof internal === 'string' && globalThis.ArenaModelLabel ? (d => d ? '（' + d + '）' : '')(globalThis.ArenaModelLabel.describeModelLabel(internal)) : '')],
         ['供应商请求 model', fmt(requestModel)],
         ['供应商响应 model', fmt(responseModel) + (typeof responseModel === 'string' && typeof requestModel === 'string' ? (responseModel === requestModel ? ' · 与请求一致' : ' · 与请求不同') : '')],
+        ['Trigger.dev 计价匹配 model', fmt(one(t.stream, 'matchedModel')) + '（第三方按自身价目表的归属，非 Arena 声明）'],
         ['provider', fmt(provider)],
         ['temperature / topP / maxOutputTokens', [one(t.stream, 'temperature'), one(t.stream, 'topP'), one(t.stream, 'maxOutputTokens')].map(fmt).join(' / ')],
         ['finishReason', fmt(one(t.stream, 'finishReason'))],

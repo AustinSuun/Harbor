@@ -91,7 +91,7 @@ class BundledTraceTests(unittest.TestCase):
 
     def test_expected_version_and_permissions(self):
         manifest=json.loads((self.original/'manifest.json').read_text(encoding='utf-8'))
-        self.assertEqual(manifest['version'],'2.0.0')
+        self.assertEqual(manifest['version'],'2.3.0')
         self.assertEqual(set(manifest['permissions']),{'activeTab','debugger','storage'})
         self.assertFalse(manifest.get('update_url'))
         self.assertEqual(set(p.name for p in self.original.iterdir()),set(bundle.FILE_HASHES))

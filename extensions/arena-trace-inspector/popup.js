@@ -1,7 +1,8 @@
 import {formatUsage, summarizeUsage} from './usage.js';
 const $ = id => document.getElementById(id);
 const status = $('status'), button = $('toggle');
-const panel = ArenaTracePanel.create($('result-panel'));
+const panel = ArenaTracePanel.create($('result-panel'),{getCatalog:names=>chrome.runtime.sendMessage({type:'ATI_CATALOG',names})
+  .then(r=>r||{rows:null,error:''}).catch(()=>({rows:null,error:''}))});
 let tabId, currentUrl='', records=[], visibleCount=20, selectedUrl='', selectedRunId='';
 let state={enabled:false,status:'检查当前标签页…',models:[]};
 const deletingSessions = new Set();

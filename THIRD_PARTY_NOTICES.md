@@ -10,13 +10,15 @@ This distribution includes Python, Playwright, Chromium, FastAPI, Uvicorn, Pydan
 
 The application has not been code-signed. A build artifact is not a claim that the program has passed clean-machine runtime acceptance or that its site automation will remain compatible with future website changes.
 
-## Arena Trace Inspector 2.0.0
+## Arena Trace Inspector 2.3.0
 
 Runtime source supplied by the project owner and included with their explicit authorization for public distribution. Original source headers are retained; no standalone upstream license file was supplied, and inclusion does not relicense third-party code. Harbor does not claim affiliation with Arena or Trigger.dev.
 
 Only the manifest and runtime JavaScript/HTML/CSS are bundled under `extensions/arena-trace-inspector`. Developer tests, reports, captured data and user settings are excluded. The bundled manifest adds a public extension-ID key so side-by-side Harbor updates keep a stable bundled extension identity. No private signing key is distributed and the application is not code-signed.
 
 The extension loads automatically in managed persistent and disposable-profile environments. It uses activeTab/debugger/storage permissions and accesses Arena/Trigger.dev when operated. Loading does not start listening or drawing. Existing custom-directory records are not automatically migrated to the bundled extension identity, and their old files are not deleted.
+
+Version 2.3.0 retains listening after a user-started drawing run and defaults automatic conversation renaming to enabled when no explicit preference exists. Harbor preserves this upstream behavior and existing preferences; it does not start listening or drawing on behalf of the user. Probe data, upstream test fixtures and research notes are not distributed.
 
 ## YesCaptcha 1.4.7
 

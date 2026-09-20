@@ -9,6 +9,7 @@ import {createDrawPrefsStore} from './draw-prefs.js';
 
 // Battle data never reuses Agent run IDs or trace authorization.
 import './battle-core.js';
+import './catalog.js';
 import {createBattleTraceService} from './battle-trace-service.js';
 const battleHistory=globalThis.ArenaBattleCore.createStore(chrome.storage.local);
 const history = createHistoryStore(chrome.storage.local);
@@ -20,10 +21,14 @@ const battleTrace=createBattleTraceService({fetch:(...args)=>fetch(...args),stor
 const hudPreferences = createHudPreferences(chrome.storage.local, storageReady);
 const drawPrefs = createDrawPrefsStore(chrome.storage.local, storageReady);
 const balance = createBalanceReader({fetch: (...args) => fetch(...args)});
+const catalog = globalThis.ArenaCatalog.createCatalogReader({fetch: (...args) => fetch(...args)});
 const sessions = new Map();
 const listenCommands = new Map();
 const archiveTickets = new Map();
 const command = (tabId, method, params = {}) => chrome.debugger.sendCommand({tabId}, method, params);
+// Chrome's own message is the only thing that separates the failure modes (another debugger,
+// a stale attachment, a navigation mid-command); dropping it made the first report undiagnosable.
+const cause = e => { const m = e?.message ?? e; return m ? '（' + String(m).slice(0, 200) + '）' : ''; };
 const safeState = s => s ? {enabled: true, ...s.view} : {enabled: false, ...emptyView()};
 const restoreTickets = new Map();
 const invalidateRestore = tabId => restoreTickets.set(tabId, (restoreTickets.get(tabId) || 0) + 1);
@@ -116,10 +121,10 @@ async function start(tabId) {
   const s = {streams: new Map(), generation: 0, pageSession, activeSession: pageSession, view: emptyView(pageSession, true)};
   // Do not detach an existing debugger owned by DevTools or another extension.
   try { await chrome.debugger.attach({tabId}, '1.3'); }
-  catch { throw new Error('无法附加调试器。请结束 Codex 对此标签页的控制，或关闭该页 DevTools 后重试。'); }
+  catch (e) { throw new Error('无法附加调试器。请结束 Codex 对此标签页的控制，或关闭该页 DevTools 后重试。' + cause(e)); }
   sessions.set(tabId, s);
   try { await command(tabId, 'Network.enable'); }
-  catch { await stop(tabId); throw new Error('无法开启 Network 事件捕获'); }
+  catch (e) { await stop(tabId); throw new Error('无法开启 Network 事件捕获' + cause(e)); }
   update(tabId, s, {});
   return restoreForTab(tabId);
 }
@@ -426,6 +431,24 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       if (!popup) { if (sender.frameId !== 0) throw Error('Invalid sender'); const tab = await chrome.tabs.get(tabId); if (!isArena(tab.pendingUrl || tab.url)) throw Error('Not an Arena page'); }
       return balance.read({force: msg.force === true});
     })().then(reply, e => reply({balance: null, cached: false, error: e?.message || '余额读取失败'}));
+    return true;
+  }
+  if (msg.type === 'ATI_CATALOG') {
+    // The catalog is the page's own text-route RSC payload. `names` asks for the rows of the
+    // models currently on the card; without it the whole directory is returned. Read-only, cached.
+    (async () => {
+      if (!popup) { if (sender.frameId !== 0) throw Error('Invalid sender'); const tab = await chrome.tabs.get(tabId); if (!isArena(tab.pendingUrl || tab.url)) throw Error('Not an Arena page'); }
+      const result = await catalog.read({force: msg.force === true});
+      if (!Array.isArray(msg.names)) return {total: result.catalog?.length ?? 0, rows: null, cached: result.cached, error: result.error};
+      const rows = {};
+      for (const raw of msg.names.slice(0, 20)) {
+        const name = typeof raw === 'string' ? raw.slice(0, 200) : '';
+        if (!name) continue;
+        const entry = globalThis.ArenaCatalog.findCatalogEntry(result.catalog, name);
+        rows[name] = entry ? globalThis.ArenaCatalog.catalogRows(entry) : null;
+      }
+      return {total: result.catalog?.length ?? 0, rows, cached: result.cached, error: result.error};
+    })().then(reply, e => reply({total: 0, rows: null, cached: false, error: e?.message || '模型目录读取失败'}));
     return true;
   }
   if (msg.type === 'ATI_STATUS') {

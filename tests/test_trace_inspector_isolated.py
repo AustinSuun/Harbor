@@ -26,7 +26,7 @@ async def main():
     expected_key=json.loads((Path(folder)/'manifest.json').read_text(encoding='utf-8')).get('key')
     if expected_key:
      expected_id=''.join(chr(97+int(c,16)) for c in hashlib.sha256(base64.b64decode(expected_key)).hexdigest()[:32])
-     assert extension_id==expected_id and manifest['version']=='2.0.0'
+     assert extension_id==expected_id and manifest['version']=='2.3.0'
     page=await context.new_page()
     cdp=await context.new_cdp_session(page);worlds=[]
     cdp.on('Runtime.executionContextCreated',lambda event:worlds.append(event['context']))
