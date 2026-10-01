@@ -2,7 +2,7 @@
 
 本地运行的账号、浏览器环境、自动任务与 HTML 结果审核工具。与 Arena.ai 无官方关联。
 
-> **v0.3.12 预览版**：Windows 构建、离线规则和模拟浏览器测试；真实 Arena 页面变化可能导致检测/归档不可用。Thinking 停止和自动归档仍默认关闭；两个插件随环境启动加载，Trace 监听/抽卡不自动开启，YesCaptcha 未配置密钥时关闭自动解题。Mac 目前是未经真实 Mac 验收的源码启动支持，不提供原生 .app/DMG。
+> **v0.3.13 预览版**：Windows 构建、离线规则和模拟浏览器测试；真实 Arena 页面变化可能导致检测/归档不可用。Thinking 停止和自动归档仍默认关闭；两个插件随环境启动加载，Trace 监听/抽卡不自动开启，YesCaptcha 未配置密钥时关闭自动解题。Mac 目前是未经真实 Mac 验收的源码启动支持，不提供原生 .app/DMG。
 
 ## Windows 下载与启动
 
@@ -22,13 +22,13 @@
 
 ## Trace Inspector 插件加载
 
-v0.3.12 的 Trace Inspector 2.3.0 和 YesCaptcha 随环境启动自动加载，无需逐环境设置。Trace 内置且采用稳定扩展ID；旧自定义版记录不自动迁移，也不删除。YesCaptcha 1.4.7 首次从官方自动获取并进行固定SHA256校验，随后复用本机缓存，官方插件代码不在本仓库/ZIP再分发。首次启动需要网络；下载或配置失败不会进入网站。
+v0.3.13 的 Trace Inspector 3.0.0 和 YesCaptcha 随环境启动自动加载，无需逐环境设置。Trace 内置且采用稳定扩展ID；旧自定义版记录不自动迁移，也不删除。YesCaptcha 1.4.7 首次从官方自动获取并进行固定SHA256校验，随后复用本机缓存，官方插件代码不在本仓库/ZIP再分发。首次启动需要网络；下载或配置失败不会进入网站。
 
 环境页“插件与密钥”统一设置一次 ClientKey，管理器加密保存，所有环境下次启动自动应用；保存或清空不会重启当前环境，运行中的旧配置继续有效直到关闭。未配置密钥时不自动解题，配置后可能消耗付费点数。插件自身存储也含敏感配置，请勿共享 profile。
 
 临时环境为支持插件改用一次性独立 Chromium 资料目录，不是原生无痕窗口；正常关闭删除目录和环境项，账号及历史保留。异常崩溃可能留有 temporary-plugin-profiles 残留。运行中的账号名称和备注可以随时修改，登录凭据仍受保护。
 
-插件声明 activeTab/debugger/storage 权限，访问 Arena 与 Trigger.dev。仅校验声明权限与入口文件，不验证签名或全部脚本。原插件自动重命名等已保存偏好不会被重置；不要同时运行插件自动抽卡与 Harbor 自动任务。debugger 附加可能与 DevTools/其他自动化冲突，不强制抢占。仅通过一次性离线 profile 的加载和调试器兼容性测试；真实 trace、模型标签及余额未在本次验收。
+插件声明 debugger/scripting/storage/unlimitedStorage/notifications 权限，访问 Arena 与 Trigger.dev。仅校验声明权限与入口文件，不验证签名或全部脚本。原插件自动重命名等已保存偏好不会被重置；不要同时运行插件自动抽卡与 Harbor 自动任务。debugger 附加可能与 DevTools/其他自动化冲突，不强制抢占。仅通过一次性离线 profile 的加载和调试器兼容性测试；真实 trace、模型标签及余额未在本次验收。
 
 首次创建独立插件设置表前备份本机数据库；不上传插件记录、凭据或用户数据。
 
@@ -81,3 +81,10 @@ chmod +x start-macos.command
 
 源码测试需自行安装依赖；API 测试另需 `httpx`。数据和账号不要放进源码、Issue或公开日志。
 更多说明见 [BROWSER_MANAGER.md](BROWSER_MANAGER.md)、[RELEASE_NOTES.md](RELEASE_NOTES.md)。第三方素材和依赖声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+
+## Trace 3.0.0 隐私与规则
+
+Trace 3.0.0 新增 scripting、unlimitedStorage、notifications 权限；监听完成后的每轮对话本地保存默认开启（尊重已保存的关闭偏好），原始trace存档默认关闭，开启后可能保存令牌和正文。不要共享插件profile或原始导出。Harbor不替用户开启监听或抽卡；限流时停止发送，不自动更换代理或绕过限流。
+
+指定目录名含“IP查询”，但该目录源码实际发现的是账号/IP维度的接口限流监视与规则化抽卡，未发现独立公网IP查询入口。本次按指定文件集成，不额外接入IP查询服务。

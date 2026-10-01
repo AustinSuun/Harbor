@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Arena Trace Inspector",
-  "version": "2.3.0",
-  "description": "读取 Agent trace 模型标签与 Battle 官方揭示，分别保存可核对的本地记录。",
-  "incognito": "split",
+  "version": "3.0.0",
+  "description": "读取 Agent trace 模型标签与 Battle 官方揭示，分别保存可核对的本地记录。个人使用版：完整保存 trace 与对话。",
   "minimum_chrome_version": "118",
   "permissions": [
-    "activeTab",
     "debugger",
-    "storage"
+    "scripting",
+    "storage",
+    "unlimitedStorage",
+    "notifications"
   ],
   "host_permissions": [
     "https://arena.ai/*",
@@ -28,15 +29,21 @@
         "https://arena.ai/*"
       ],
       "js": [
+        "page-token-parser.js",
+        "page-token.js",
+        "collection-global.js",
         "view-model.js",
         "model-label-global.js",
         "billing-global.js",
+        "transcript-global.js",
+        "reasoning-evidence-global.js",
         "agent-detail-view.js",
-        "catalog.js",
         "panel.js",
         "hud-layout.js",
         "draw-prefs-global.js",
+        "draw-policy-global.js",
         "conversation-rename.js",
+        "draw-task-client.js",
         "auto-draw.js",
         "hud.js",
         "battle-core.js",
@@ -48,5 +55,8 @@
       "run_at": "document_idle"
     }
   ],
+  "icons": {
+    "128": "icon-128.png"
+  },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv29dDZcASrvr4ElNjmbjiZZqkCpNH+ampCa/DofEZLn7DuqwknKJGCB/fL2kEs/Q3s3Ebzwy7G4NBRxFiKaSGBNqsaCYEHxLLeQu+0TGnY72HZ1MKRy7Yydx2I7RhRsoVt/pjMxr85ctyU3AzOK2McgtZA1t0p62XRtEuQKw+ffDIxYqTVCRLEGnrunYFnQoqs1MvVrhigppKj8TJpRuQujPgfMEA8GFNkHiFGIkHQ/iIRZkeDCzdIakZSDEMgd1NBkmaTZ4P597ke4/Y3PDX69FcSpgEEJGBH5jUNOnPUPzX0ET7mkQi5lcW9cCC7tYeB/7yZjnTJtPKSTXcm39nQIDAQAB"
 }

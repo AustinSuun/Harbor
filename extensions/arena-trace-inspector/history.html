@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>自动抽卡历史 · Arena Trace Inspector</title><link rel="stylesheet" href="tasks.css"></head><body>
+<header><div><span class="eyebrow">ARENA TRACE INSPECTOR / 3.0.0</span><h1>自动抽卡历史</h1><p>把每一轮的识别、命名与归档分开核对。</p></div><div class="header-right"><a class="nav-btn" href="settings.html">抽卡设置</a><button id="refresh" type="button">刷新记录</button></div></header>
+<div id="notice" role="status" aria-live="polite"></div>
+<main><aside><div class="section-title"><h2>抽卡记录</h2><span id="count"></span></div><p class="muted">本地最多保留 40 次任务（每次最多 100 轮），超出后自动淘汰最早记录。刷新或离站不会自动续跑。</p><div id="task-filters" class="task-filters" role="group" aria-label="按任务状态筛选"></div><div id="tasks" class="task-list"></div></aside>
+<section class="workspace">
+<section id="detail" class="detail"><div class="empty"><span>01 / READY</span><h2>选择一个任务查看结果</h2><p>从 Arena 页面 HUD 开始抽卡后，任务和诊断会保存在这里。<br>此页面不会启动抽卡、隐式开启监听或自动重发。</p></div></section>
+</section></main><script src="model-label-global.js"></script><script src="draw-policy-global.js"></script><script type="module" src="tasks.js"></script></body></html>

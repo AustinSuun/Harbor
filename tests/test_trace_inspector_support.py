@@ -54,6 +54,11 @@ class Support(unittest.TestCase):
     def test_reject_expanded_permissions(self):
         self.manifest['permissions']=['debugger','cookies'];self.write()
         with self.assertRaises(ValueError):ext.validate_folder(str(self.folder))
+    def test_approved_v3_permissions(self):
+        self.manifest.update(version='3.0.0',permissions=['debugger','scripting','storage','unlimitedStorage','notifications']);self.write()
+        self.assertEqual(ext.validate_folder(str(self.folder)),str(self.folder.resolve()))
+        self.manifest['permissions'].append('cookies');self.write()
+        with self.assertRaises(ValueError):ext.validate_folder(str(self.folder))
     def test_reject_expanded_hosts(self):
         self.manifest['host_permissions']=['<all_urls>'];self.write()
         with self.assertRaises(ValueError):ext.validate_folder(str(self.folder))

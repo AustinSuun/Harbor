@@ -5,7 +5,7 @@ const fields = {
   tokens: ['style.accessory.items[icon=tabler-hash].text', 40],
   cost: ['style.accessory.items[icon=tabler-currency-dollar].text', 40]
 };
-const time = value => typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value)) ? value : null;
+const time = value => (typeof value === 'string' && value.length <= 40 && Number.isFinite(Date.parse(value)) ? value : null);
 export function sanitizeEvidence(input) {
   if (input?.schemaVersion !== 1) return null;
   const out = {schemaVersion: 1, source: 'Trigger.dev run events', spanName: 'ai.streamText.doStream'};
@@ -29,7 +29,8 @@ export function createEvidence(labels, event, checkedAt) {
   return sanitizeEvidence(out);
 }
 export function mergeEvidence(oldValue, incoming) {
-  const old = sanitizeEvidence(oldValue), next = sanitizeEvidence(incoming);
+  const old = sanitizeEvidence(oldValue),
+    next = sanitizeEvidence(incoming);
   if (!next) return old;
   // Keep each label's own observation time when a later snapshot omits a field.
   return sanitizeEvidence({...old, ...next});

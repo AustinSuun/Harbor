@@ -25,7 +25,10 @@ def validate_folder(value):
         manifest = json.loads(raw.decode('utf-8-sig'))
         if manifest.get('name') != 'Arena Trace Inspector' or manifest.get('manifest_version') != 3:
             raise ValueError('wrong extension')
-        if set(manifest.get('permissions', [])) - {'activeTab', 'debugger', 'storage'}:
+        allowed_permissions = {'activeTab', 'debugger', 'storage'}
+        if manifest.get('version') == '3.0.0':
+            allowed_permissions |= {'scripting', 'unlimitedStorage', 'notifications'}
+        if set(manifest.get('permissions', [])) - allowed_permissions:
             raise ValueError('unexpected permissions')
         if set(manifest.get('host_permissions', [])) - {'https://arena.ai/*', 'https://api.trigger.dev/*'}:
             raise ValueError('unexpected hosts')
@@ -50,7 +53,7 @@ def validate_folder(value):
             if not path.is_relative_to(folder) or not path.is_file():
                 raise ValueError('missing or escaped entry')
     except (OSError, ValueError, TypeError, AttributeError):
-        raise ValueError('插件校验失败：需要完整 Arena Trace Inspector MV3 目录及已审核的权限范围（activeTab/debugger/storage、Arena/Trigger.dev）；不支持新增权限或缺失文件') from None
+        raise ValueError('插件校验失败：需要完整 Arena Trace Inspector MV3 目录及已审核的权限范围（按支持版本核对权限、Arena/Trigger.dev来源）；不支持新增权限或缺失文件') from None
     # Declared-entry/permission checks are not a signature or full source audit.
     return str(folder)
 
