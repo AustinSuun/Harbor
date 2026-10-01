@@ -348,6 +348,7 @@ class Manager:
     async def launch(self, eid):
         async with self.lock:
             item = self.get(eid)
+            if self.shutting_down:raise HTTPException(409, '管理器正在退出，不能启动环境')
             if self.updating:raise HTTPException(409, '正在安装更新，暂不能启动环境')
             if eid in self.discard_pending:
                 raise HTTPException(409, '此临时环境正在丢弃，请从账号管理新建环境')
@@ -686,11 +687,26 @@ async def update_info():
     return {**release,'install_supported':FROZEN and sys.platform=='win32','status':updates.status}
 
 
+@app.post('/api/shutdown',status_code=202)
+async def shutdown_manager():
+    exit_callback=getattr(app.state,'request_exit',None)
+    if not exit_callback:raise HTTPException(409,'请使用 Harbor 启动器运行管理器，再从网页退出')
+    async with manager.lock:
+        if manager.shutting_down:return {'stopping':True}
+        if (manager.updating or manager.contexts or manager.login_jobs or manager.cleanup_tasks
+                or any(r['status'] in ('running','stopping') for r in pelican.runs.values())):
+            raise HTTPException(409,'请先保存工作并关闭运行环境，等待任务或清理结束后再退出；不会强制中断')
+        manager.shutting_down=True
+        asyncio.get_running_loop().call_later(.2,exit_callback)
+    return {'stopping':True}
+
+
 @app.post('/api/updates/install',status_code=202)
 async def install_update():
     if not FROZEN or sys.platform!='win32':raise HTTPException(409,'源码/Mac版请从项目页面手动更新')
     if not getattr(app.state,'request_exit',None):raise HTTPException(409,'请使用 Harbor 启动器运行更新')
     async with manager.lock:
+        if manager.shutting_down:raise HTTPException(409,'管理器正在退出，不能安装更新')
         if manager.updating:raise HTTPException(409,'更新已经在进行')
         if manager.contexts or any(r['status'] in ('running','stopping') for r in pelican.runs.values()):
             raise HTTPException(409,'请先保存工作并关闭浏览器环境，再一键更新；不会强制中断任务')

@@ -6,6 +6,7 @@ import uuid
 from typing import Literal
 from task_history import History
 from reply_capture import READ_OUTPUT
+from arena_task_dom import READ_REPLY
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from fastapi import HTTPException
@@ -17,7 +18,7 @@ STICKMAN_PROMPT = '请使用纯 SVG 和原生 SMIL 动画（或纯 CSS），制�
 QUICK_PELICAN_PROMPT = '这是一个编码能力测试，不是分析或规划测试。本题不允许思考、分析、规划或讨论方案，请看到需求后立即开始创建文件、编写代码。\n\n任务：创建一个 HTML，内容是用 SVG 绘制“鹈鹕骑自行车”的 2D 动画。\n\n执行要求：\n\n1. 第一项操作立即调用 functions.write_file，在 /home/user/index.html 中直接写入完整 HTML 代码，不要先输出任何文字。\n2. 不要检查目录、读取文件、搜索、安装依赖、执行命令、测试、截图或验证。\n3. 不要询问问题，所有细节自行决定，直接编码。\n4. HTML、CSS、SVG 和 JavaScript 全部内联，不使用外部资源。鹈鹕须有明显的长嘴与喉囊，动画包含车轮旋转和双腿踩踏。\n5. 写入完成后立即调用 functions.present_file 打开 /home/user/index.html，然后结束，不追加解释。\n\n注意：这是编码能力测试，不允许先进入 Thinking 或输出思考过程。现在立即调用文件写入工具，开始编码。'
 TASK_PROMPTS = {'pelican_quick': QUICK_PELICAN_PROMPT, 'pelican': PROMPT, 'recreate': RECREATE_PROMPT, 'stickman': STICKMAN_PROMPT}
 URL = 'https://arena.ai/agent'
-USER = '[data-message-role="user"], [data-message-author-role="user"], [data-role="user"]'
+USER = '[data-message-role="user"], [data-message-author-role="user"], [data-role="user"], [role="log"] [data-agent-transcript-message="true"][data-chat-message-id][class*="scroll-mt-"]'
 ACTIVE = {'running', 'stopping'}
 
 
@@ -36,7 +37,7 @@ class TaskSettings(BaseModel):
 # Do not use broad icon scoring: an uncertain send target must fail closed.
 FIND_INPUT = r'''() => {
  const visible = e => {const r=e.getBoundingClientRect();return r.width>40&&r.height>10&&getComputedStyle(e).visibility!=='hidden';};
- const excluded = e => !!e.closest('[role="dialog"], #arena-runner-float, #arena-debug-panel, [id*="cookie"], [class*="cookie"], [class*="consent"]');
+ const excluded = e => !!e.closest('[role="dialog"], #arena-trace-inspector-hud, #arena-runner-float, #arena-debug-panel, [id*="cookie"], [class*="cookie"], [class*="consent"]');
  const choices=[...document.querySelectorAll('textarea, [contenteditable="true"][data-lexical-editor], .ProseMirror[contenteditable="true"], [role="textbox"][contenteditable="true"]')]
  .filter(e=>visible(e)&&!excluded(e)&&!e.disabled&&!e.readOnly&&e.getAttribute('aria-disabled')!=='true');
  choices.sort((a,b)=>b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom);
@@ -48,7 +49,7 @@ FIND_SEND = r'''input => {
  const candidates=[...document.querySelectorAll('button, [role="button"]')].filter(b=>{
   const r=b.getBoundingClientRect();
   if(r.width<10||r.height<10||b.disabled||b.getAttribute('aria-disabled')==='true'||getComputedStyle(b).visibility==='hidden')return false;
-  if(b.closest('[role="dialog"],#arena-runner-float,[id*="cookie"],[class*="cookie"],[class*="consent"]'))return false;
+  if(b.closest('[role="dialog"],#arena-trace-inspector-hud,#arena-debug-panel,#arena-runner-float,[id*="cookie"],[class*="cookie"],[class*="consent"]'))return false;
   const label=[b.textContent,b.getAttribute('aria-label'),b.title,b.getAttribute('data-testid')].filter(Boolean).join(' ').toLowerCase();
   if(/attach|upload|file|stop|cancel|new.chat|regenerate|归档|上传|停止|取消|新对话/.test(label))return false;
   const sameForm=!!form&&b.closest('form')===form;
@@ -64,33 +65,11 @@ CHECK_SUBMITTED = r'''({prompt,selector,baseline}) => {
  if(messages.length>baseline && messages.slice(baseline).some(e=>
    [e.innerText,e.textContent].some(text=>normalize(text).includes(expected)))) return 'user-message';
  const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;};
- const editors=[...document.querySelectorAll('textarea,[contenteditable="true"]')].filter(visible);
+ const editors=[...document.querySelectorAll('textarea,[contenteditable="true"]')].filter(e=>visible(e)&&!e.closest('#arena-trace-inspector-hud,#arena-runner-float,#arena-debug-panel'));
  const cleared=editors.length>0&&editors.every(e=>!(e.value||e.textContent||'').trim());
- const generating=[...document.querySelectorAll('button,[role="button"]')].some(b=>visible(b)&&/^(stop|stop generating|stop generation|停止|停止生成)$/i.test((b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim()));
+ const generating=[...document.querySelectorAll('button,[role="button"]')].some(b=>visible(b)&&!b.closest('#arena-trace-inspector-hud,#arena-runner-float,#arena-debug-panel')&&/^(stop|stop generating|stop generation|stop response|停止|停止生成|停止响应)$/i.test((b.getAttribute('aria-label')||b.getAttribute('title')||b.textContent||'').trim()));
  return cleared&&generating?'generating':null;
 }'''
-
-
-# Completion must be scoped to assistant output, not the whole page/preview.
-READ_REPLY = r'''() => {
- const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden';};
- const user='[data-message-role="user"],[data-message-author-role="user"],[data-role="user"]';
- let roots=[];
- for(const selector of ['[data-message-role="assistant"],[data-message-author-role="assistant"],[data-role="assistant"]','[data-testid="assistant-message"],[data-testid="assistant-turn"]']){
-  const els=[...document.querySelectorAll(selector)].filter(e=>!e.closest(user+',textarea,[contenteditable="true"],#arena-runner-float'));
-  roots=els.filter(e=>!els.some(o=>o!==e&&o.contains(e)));
-  if(roots.length)break;
- }
- const last=roots.at(-1);
- const stream='[data-is-streaming="true"],[data-streaming="true"],[data-state="streaming"],[aria-busy="true"]';
- const stop=[...document.querySelectorAll('button,[role="button"]')].some(b=>visible(b)&&/^(stop|stop generating|stop generation|stop response|停止|停止生成|停止响应)$/i.test((b.getAttribute('aria-label')||b.title||b.textContent||'').trim()));
- const generating=stop||!!(last&&(last.matches(stream)||[...last.querySelectorAll(stream)].some(visible)));
- const explicitDone=!!last&&last.matches('[data-state="completed"],[data-state="complete"],[data-status="completed"],[data-status="complete"]');
- const editorReady=[...document.querySelectorAll('textarea,[contenteditable="true"][data-lexical-editor],.ProseMirror[contenteditable="true"]')].some(e=>visible(e)&&!e.disabled&&!e.readOnly&&e.getAttribute('aria-disabled')!=='true');
- return {key:last?(last.getAttribute('data-message-id')||last.getAttribute('data-id')||last.id||''):'',count:roots.length,text:last?(last.innerText||last.textContent||''):'',generating,explicitDone,editorReady};
-}'''
-
-
 
 
 def normalize_composer_text(text):
@@ -226,13 +205,31 @@ class PelicanTasks:
                 self.manager.log(run['environment_id'],'记录写入失败，已停止任务：'+str(exc)[:400])
                 return
 
+    async def guarded_worker(self, eid, run):
+        try:
+            await self.worker(eid,run)
+        except Exception:
+            # Also cover persistence/finally errors outside worker's normal handler.
+            run['stop'].set()
+            for other in run['workers']:
+                if other is not asyncio.current_task():other.cancel()
+            raise
+
     async def execute(self, eid, run):
         monitor=asyncio.create_task(self.persist_loop(run))
         try:
             if not run['stop'].is_set():
                 worker_count = min(run['settings']['concurrency'], len(run['jobs']))
-                run['workers']=[asyncio.create_task(self.worker(eid,run)) for _ in range(worker_count)]
-                await asyncio.gather(*run['workers'], return_exceptions=True)
+                run['workers']=[asyncio.create_task(self.guarded_worker(eid,run)) for _ in range(worker_count)]
+                results=await asyncio.gather(*run['workers'], return_exceptions=True)
+                errors=[result for result in results if isinstance(result,Exception)]
+                if errors:
+                    run['stop'].set()
+                    run['worker_error']=str(errors[0])[:400]
+                    for job in run['jobs']:
+                        if job['status'] not in ('pending','success','interrupted','cancelled','unknown','untracked','failed'):
+                            job.update(status='untracked' if job.get('submitted') else 'unknown',message='任务线程异常，无法确认完成；已停止本轮，不重发')
+                    self.manager.log(eid,'任务线程异常，已停止本轮：'+run['worker_error'])
         finally:
             monitor.cancel()
             await asyncio.gather(monitor,return_exceptions=True)
@@ -356,25 +353,27 @@ class PelicanTasks:
                         self.checkpoint(run)
                         job.update(status='waiting',message=f'第 {index+1} 题：等待输入框')
                         editor=await self.wait_editor(page,run)
-                        job.update(status='typing',message=f'第 {index+1} 题：填写内容')
-                        await editor.fill(prompt,timeout=10000)
-                        editor=await self.verify_composer(page,editor,prompt,run,job)
-                        job.update(status='waiting',message='等待最小发送间隔')
-                        await self.pause(run,run['settings']['interval']-(time.monotonic()-self.last_send.get(eid,0)))
-                        # The app may have re-rendered while waiting for the send interval.
-                        editor=await self.verify_composer(page,editor,prompt,run,job)
-                        button=await self.wait_button(page,editor,run)
-                        baseline=await page.locator(USER).count()
-                        reply_baseline=await page.evaluate(READ_REPLY)
-                        turn['reply_baseline']={'count':reply_baseline['count'],'key':reply_baseline['key']}
-                        turn.update(status='sending',message='准备点击发送一次')
-                        job.update(status='sending',message=f'第 {index+1} 题：点击发送（仅一次）')
-                        self.history.save_run(run)  # Durable checkpoint BEFORE an irreversible click.
-                        self.checkpoint(run)
-                        html_capture.arm()
-                        attempted=True
-                        await button.click(timeout=10000)
-                        self.last_send[eid]=time.monotonic()
+                        from arena_task_dom import send_surface
+                        async with send_surface(page):
+                            job.update(status='typing',message=f'第 {index+1} 题：填写内容')
+                            await editor.fill(prompt,timeout=10000)
+                            editor=await self.verify_composer(page,editor,prompt,run,job)
+                            job.update(status='waiting',message='等待最小发送间隔')
+                            await self.pause(run,run['settings']['interval']-(time.monotonic()-self.last_send.get(eid,0)))
+                            # The app may have re-rendered while waiting for the send interval.
+                            editor=await self.verify_composer(page,editor,prompt,run,job)
+                            button=await self.wait_button(page,editor,run)
+                            baseline=await page.locator(USER).count()
+                            reply_baseline=await page.evaluate(READ_REPLY)
+                            turn['reply_baseline']={'count':reply_baseline['count'],'key':reply_baseline['key']}
+                            turn.update(status='sending',message='准备点击发送一次')
+                            job.update(status='sending',message=f'第 {index+1} 题：点击发送（仅一次）')
+                            self.history.save_run(run)  # Durable checkpoint BEFORE an irreversible click.
+                            self.checkpoint(run)
+                            html_capture.arm()
+                            attempted=True
+                            await button.click(timeout=10000)
+                            self.last_send[eid]=time.monotonic()
                     job.update(status='confirming',message=f'第 {index+1} 题：确认提交，不重复点击')
                     evidence=await page.wait_for_function(CHECK_SUBMITTED,arg={'prompt':prompt,'selector':USER,'baseline':baseline},timeout=25000,polling=500)
                     submitted=True
@@ -396,12 +395,13 @@ class PelicanTasks:
                     self.history.save_run(run)
                     await self.maybe_archive(page,run,job)
                     continue
-                job.update(status='success',message='回复完成，已保存原文并释放名额',url=page.url)
+                job.update(status='success',message='已确认回复完成，正在保存结果；保存后继续下一题',url=page.url)
                 self.history.save_run(run)
                 await self.history.capture_html(run,job,page)
                 if run['settings']['capture_screenshot']:
                     await self.history.screenshot(run,job,page)
                 await self.maybe_archive(page,run,job)
+                job['message']=job['message'].replace('正在保存结果；保存后继续下一题','结果保存流程结束，已释放名额')
                 self.manager.log(eid,f'任务 #{job["number"]}：{job["message"]}')
             except asyncio.CancelledError:
                 if self.can_refill_after_close(eid, run, page, page_closed):
@@ -508,20 +508,25 @@ class PelicanTasks:
             seen_generating=seen_generating or state['generating']
             signature=(state['count'],state['text'])
             new_output=bool(state['text'].strip()) and is_new_response
-            candidate=(new_output and not state['generating'] and state['editorReady']
+            candidate=(new_output and not state['generating']
+                       and (state['editorReady'] or state['explicitDone'])
                        and (seen_generating or state['explicitDone']))
+            stable_seconds=3 if state['explicitDone'] else 30
             if not candidate or signature!=previous:
                 stable_since=None
             if candidate:
                 if stable_since is None:
                     stable_since=time.monotonic()
-                if time.monotonic()-stable_since>=30:
+                if time.monotonic()-stable_since>=stable_seconds:
+                    turn['completion_evidence']={'source':'review-panel' if state.get('reviewReady') else ('explicit-state' if state['explicitDone'] else 'observed-generation-ended'),'stable_seconds':stable_seconds,'adapter':state.get('adapter','legacy')}
                     return
             previous=signature
             if time.monotonic()-began>=900:
                 job.update(status='attention',message='15 分钟未确认回复完成；可关闭此任务标签释放名额并继续后续任务，或停止本轮；本题不重发')
+            elif time.monotonic()-began>=60 and not state['count']:
+                job.update(status='attention',message='已发送，但尚未识别到回复区域；可能仍在加载、等待操作或站点结构变化。本题不重发；可查看任务页或停止本轮')
             elif candidate:
-                job.update(status='generating',message='生成信号已结束，等待输出稳定 30 秒；仍占用名额')
+                job.update(status='generating',message=f'已识别完成信号，等待输出稳定 {stable_seconds} 秒；仍占用名额')
             else:
                 job.update(status='generating',message='已发送，等待回复完成；仍占用并发名额')
             await self.pause(run,1)

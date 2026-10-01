@@ -1,8 +1,9 @@
 """Synthetic scheduler tests: no browser, network, credentials or real database."""
-import ast, asyncio, time, unittest
+import ast, asyncio, time, unittest, sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 source=ast.parse((Path(__file__).resolve().parents[1] / 'pelican_tasks.py').read_text(encoding='utf-8-sig'))
 cls=next(n for n in source.body if isinstance(n,ast.ClassDef) and n.name=='PelicanTasks')
 ns=dict(asyncio=asyncio,time=time,datetime=datetime,timezone=timezone,URL='test',USER='user',READ_REPLY='reply',CHECK_SUBMITTED='check')

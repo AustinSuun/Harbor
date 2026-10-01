@@ -14,7 +14,7 @@ async def run():
   browser=await pw.chromium.launch(channel='chromium',headless=True)
   page=await browser.new_page()
   await page.set_content(re.sub(r'<script\b[^>]*>.*?</script>','',html,flags=re.S))
-  await page.evaluate("const $=id=>document.getElementById(id);window.testCalls=[];async function api(p,m){testCalls.push([p,m]);return {available:true,install_supported:true,current_version:'0.3.8',latest_version:'0.3.9'}}function notify(){}\n"+script+'\nvoid 0;')
+  await page.evaluate("const $=id=>document.getElementById(id);window.testCalls=[];let managerQuit=false;async function api(p,m){testCalls.push([p,m]);return {available:true,install_supported:true,current_version:'0.3.8',latest_version:'0.3.9'}}function notify(){}\n"+script+'\nvoid 0;')
   assert await page.locator('aside #github-link').count()==0
   assert await page.locator('.project-header #github-link svg').count()==1
   assert await page.locator('#check-update').count()==1

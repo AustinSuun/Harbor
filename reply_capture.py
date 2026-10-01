@@ -1,13 +1,9 @@
 """Capture visible answer source for browser tasks; no numeric-test dependency."""
 
-READ_OUTPUT = r'''() => {
- const user='[data-message-role="user"],[data-message-author-role="user"],[data-role="user"]';
- let roots=[];
- for(const selector of ['[data-message-role="assistant"],[data-message-author-role="assistant"],[data-role="assistant"]','[data-testid="assistant-message"],[data-testid="assistant-turn"]']){
-  const els=[...document.querySelectorAll(selector)].filter(e=>!e.closest(user+',textarea,[contenteditable="true"]'));
-  roots=els.filter(e=>!els.some(o=>o!==e&&o.contains(e)));
-  if(roots.length)break;
- }
+from arena_task_dom import DOM_HELPERS
+
+READ_OUTPUT = '() => {\n' + DOM_HELPERS + r'''
+ const roots=assistantRoots();
  const latest=roots.at(-1);
  if(!latest)return {text:'',count:0,source:'no-assistant-root',truncated:false};
  const clone=latest.cloneNode(true);

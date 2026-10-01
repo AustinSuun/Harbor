@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import venv
+from app_version import VERSION
 
 BASE=Path(__file__).resolve().parent
 WORK=BASE/'.packaging'
@@ -102,7 +103,7 @@ def main():
     release.mkdir(parents=True)
     from trace_inspector_bundle import verified_bundle, FILE_HASHES
     trace_bundle = Path(verified_bundle())
-    args=[python,'-m','PyInstaller','--noconfirm','--clean','--onedir','--console',
+    args=[python,'-m','PyInstaller','--noconfirm','--clean','--onedir','--windowed',
           '--name','Harbor','--distpath',release,'--workpath',WORK/'pyinstaller',
           '--specpath',WORK,'--contents-directory','_internal',
           '--add-data',str(BASE/'browser_manager.html')+os.pathsep+'.',
@@ -127,7 +128,7 @@ def main():
     # Record package versions, but not usernames, machine paths or account data.
     versions=json.loads(subprocess.check_output([str(python),'-c',
         "import importlib.metadata as m,json; print(json.dumps({n:m.version(n) for n in ['playwright','fastapi','uvicorn','pydantic','pyinstaller']}))"],text=True))
-    manifest={'application':'Harbor','application_version':'0.3.13','platform':'Windows x64','created_at':stamp,
+    manifest={'application':'Harbor','application_version':VERSION,'platform':'Windows x64','created_at':stamp,
               'dependencies':versions,'browser_folders':[p.name for p in bundle.iterdir()],
               'native_libraries':[p.name for p in native_dlls],
               'plugins':True,'plugin_loading_support':{'yescaptcha':'automatic-all-environments','trace_inspector':'automatic-all-environments','default_enabled':True,'third_party_plugin_bundled':True,'yescaptcha_bundled':False,'yescaptcha_install':'official-pinned-first-launch','yescaptcha_key':'local-encrypted-global-next-launch','temporary_mode':'disposable-profile','trace_inspector_bundled_version':'3.0.0'},
@@ -136,6 +137,7 @@ def main():
               'update_support':'windows-side-by-side','mac_support':'source-preview',
               'thinking_diagnostic':'read-only-human-labeled','project_controls':'top-right',
               'ui_design':'light-teal-workspace','concurrency_fixed_cap':None,
+              'desktop_startup':'windowless-web-ui','local_file_logging':True,'web_exit_requires_idle':True,
               'release_channel':'preview','user_data_included':False,'runtime_validated':False,
               'data_directory':'%LOCALAPPDATA%/Harbor'}
     (app/'distribution-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
