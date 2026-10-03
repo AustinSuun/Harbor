@@ -20,6 +20,7 @@ from html_results import preview_html
 import yescaptcha_support
 import trace_inspector_support
 import default_plugins
+import account_platforms
 import re
 from task_history import ReviewInput
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -44,6 +45,7 @@ def now():
 
 class AccountInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    platform: Literal['arena', 'chatgpt'] = 'arena'
     note: str = Field(default='', max_length=500)
     login_email: str = Field(default='', max_length=254)
     login_password: SecretStr | None = None
@@ -183,6 +185,8 @@ class Manager:
                 self.db.execute('INSERT INTO accounts VALUES (?,?,?,?,?,?)',
                     (aid, row['name'], row['note'], row['login_email'], row['password_cipher'], now()))
                 self.db.execute("UPDATE environments SET account_id=?, login_email='', password_cipher='' WHERE id=?", (aid, row['id']))
+        account_platforms.initialize(self.db)
+        # Existing accounts without a platform assignment remain Arena accounts.
         # Legacy profiles are not reused or deleted by migration.
         self.db.execute('UPDATE environments SET extension_enabled=0 WHERE extension_enabled<>0')
         self.db.commit()
@@ -200,7 +204,11 @@ class Manager:
         row = self.db.execute('SELECT * FROM accounts WHERE id=?', (aid,)).fetchone()
         if row is None:
             raise HTTPException(404, '账号不存在，请先添加或关联账号')
-        return dict(row)
+        return dict(row, platform=account_platforms.platform_for(self.db, aid))
+
+    def require_arena(self, eid):
+        if self.account_for(eid)['platform'] != 'arena':
+            raise HTTPException(400, 'ChatGPT 环境仅支持手动登录和聊天，不支持 Arena 功能')
 
     def account_for(self, eid):
         return self.account(self.get(eid)['account_id'])
@@ -209,6 +217,7 @@ class Manager:
         result = []
         for row in self.db.execute('SELECT * FROM accounts ORDER BY created_at, rowid'):
             item = dict(row)
+            item['platform'] = account_platforms.platform_for(self.db, item['id'])
             item['has_password'] = bool(item.pop('password_cipher', ''))
             envs = self.db.execute('SELECT id FROM environments WHERE account_id=?', (item['id'],)).fetchall()
             item['environment_count'] = len(envs)
@@ -231,15 +240,23 @@ class Manager:
             number += 1
 
     def create_environment(self, inp):
-        self.account(inp.account_id)
+        account = self.account(inp.account_id)
+        start_url = self.environment_url(inp, account)
         eid = uuid.uuid4().hex
         with self.db:
             self.db.execute('BEGIN IMMEDIATE')
             name = self.unique_environment_name(inp.name)
             self.db.execute('INSERT INTO environments (id,name,note,start_url,extension_enabled,created_at,account_id,mode) VALUES (?,?,?,?,?,?,?,?)',
-                (eid, name, inp.note, inp.start_url, 0, now(), inp.account_id, inp.mode))
+                (eid, name, inp.note, start_url, 0, now(), inp.account_id, inp.mode))
         self.log(eid, '创建环境：' + name)
         return eid
+
+    def environment_url(self, inp, account):
+        if account['platform'] == 'chatgpt':
+            if inp.mode != 'persistent':
+                raise HTTPException(400, 'ChatGPT 只支持保留型环境')
+            return account_platforms.CHATGPT_HOME
+        return inp.start_url
 
     def snapshot(self):
         result = []
@@ -249,6 +266,7 @@ class Manager:
             item.pop('password_cipher', None)
             item.pop('login_email', None)
             account = self.account(item['account_id']) if item['account_id'] else {}
+            item['platform'] = account.get('platform', 'arena')
             item['account_name'] = account.get('name', '未关联账号')
             item['login_email'] = account.get('login_email', '')
             item['auth_status'] = self.auth_states.get(eid, 'not_logged_in')
@@ -258,7 +276,13 @@ class Manager:
             item['trace_inspector']['runtime'] = ('requested_on_launch' if self.trace_inspector_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
             item['yescaptcha'] = {'enabled':True,'folder':'','automatic':True}
             item['yescaptcha']['runtime'] = ('requested_on_launch' if self.yescaptcha_started.get(eid) else 'disabled_on_launch') if eid in self.contexts else 'not_running'
-            item['task'] = pelican.snapshot(eid)
+            if item['platform'] == 'chatgpt':
+                item['trace_inspector'] = {'enabled':False, 'runtime':'not_applicable'}
+                item['yescaptcha'] = {'enabled':False, 'runtime':'not_applicable'}
+                item['auth_status'] = 'manual_login' if eid in self.contexts else 'session_saved'
+                item['task'] = None
+            else:
+                item['task'] = pelican.snapshot(eid)
             item.update(status=self.states.get(eid, 'stopped'), error=self.errors.get(eid, ''), profile_path=str(DATA / 'session-profiles' / eid) if item['mode']=='persistent' else '')
             result.append(item)
         return result
@@ -328,7 +352,8 @@ class Manager:
             watcher = self.auth_watch_jobs.pop(eid, None)
             if watcher and watcher is not asyncio.current_task():
                 watcher.cancel()
-            pelican.browser_closed(eid)
+            if self.account_for(eid)['platform'] == 'arena':
+                pelican.browser_closed(eid)
             self.states[eid] = 'stopped'
             self.auth_states[eid] = 'not_logged_in'
             job = self.login_jobs.pop(eid, None)
@@ -361,10 +386,16 @@ class Manager:
             context = None
             try:
                 account = self.account_for(eid)
-                if not account['login_email'] or not account['password_cipher']:
-                    raise CredentialError('请先在账号管理中保存 Arena 邮箱和密码。')
-                key = default_plugins.key_value(self.db)
-                extension_args = await default_plugins.launch_resources(DATA)
+                chatgpt = account['platform'] == 'chatgpt'
+                if chatgpt:
+                    if item['mode'] != 'persistent':
+                        raise HTTPException(400, 'ChatGPT 只支持保留型环境')
+                    key, extension_args = None, ['--disable-extensions']
+                else:
+                    if not account['login_email'] or not account['password_cipher']:
+                        raise CredentialError('请先在账号管理中保存 Arena 邮箱和密码。')
+                    key = default_plugins.key_value(self.db)
+                    extension_args = await default_plugins.launch_resources(DATA)
                 if item['mode'] == 'persistent':
                     profile = DATA / 'session-profiles' / eid
                     profile.mkdir(parents=True, exist_ok=True)
@@ -374,22 +405,30 @@ class Manager:
                     self.temporary_profiles[eid] = profile
                 context = await self.pw.chromium.launch_persistent_context(
                     user_data_dir=str(profile), channel='chromium', headless=False,
-                    no_viewport=True, args=extension_args, offline=True, timeout=45000)
-                await default_plugins.configure_context(context, key)
-                key = None
-                await context.set_offline(False)
+                    no_viewport=True, args=extension_args, offline=not chatgpt, timeout=45000)
+                if not chatgpt:
+                    await default_plugins.configure_context(context, key)
+                    key = None
+                    await context.set_offline(False)
                 self.contexts[eid] = context
-                self.yescaptcha_started[eid] = True
-                self.trace_inspector_started[eid] = True
+                self.yescaptcha_started[eid] = not chatgpt
+                self.trace_inspector_started[eid] = not chatgpt
                 context.on('close', lambda *_: self.closed(eid, context))
                 self.watch_pages(eid, context)
                 self.states[eid] = 'running'
-                self.auth_states[eid] = 'logging_in'
+                self.auth_states[eid] = 'manual_login' if chatgpt else 'logging_in'
                 page = context.pages[0] if context.pages else await context.new_page()
                 if item['mode'] == 'incognito':
                     self.temporary_sessions.add(eid)
-                self.login_jobs[eid] = asyncio.create_task(self.auto_login(eid, context, page))
-                self.log(eid, ('保留型环境已打开' if item['mode']=='persistent' else '全新无痕会话已启动') + '，正在检查登录')
+                if chatgpt:
+                    try:
+                        await account_platforms.open_initial_page(page, profile)
+                    except Exception:
+                        self.errors[eid] = '浏览器已打开，页面加载未完成；请在浏览器中检查网络或刷新。'
+                    self.log(eid, 'ChatGPT 环境已打开，请手动登录；关闭后保留浏览器资料，下次复用。')
+                else:
+                    self.login_jobs[eid] = asyncio.create_task(self.auto_login(eid, context, page))
+                    self.log(eid, ('保留型环境已打开' if item['mode']=='persistent' else '全新无痕会话已启动') + '，正在检查登录')
             except Exception as exc:
                 if context is not None:
                     await context.close()
@@ -501,6 +540,7 @@ class Manager:
                 self.auth_watch_jobs.pop(eid, None)
 
     async def login_evidence(self, eid):
+        self.require_arena(eid)
         context = self.require_context(eid)
         email = self.account_for(eid)['login_email']
         best = {'status':'unknown', 'reason':'没有可检查的 Arena 标签页', 'ready':False, 'method':'none'}
@@ -515,6 +555,7 @@ class Manager:
         return best
 
     async def check_login(self, eid):
+        self.require_arena(eid)
         context = self.require_context(eid)
         if self.auth_states.get(eid) == 'logging_in':
             raise HTTPException(409, '正在自动登录，请稍候。')
@@ -536,6 +577,7 @@ class Manager:
         raise HTTPException(409, evidence['reason'] + ('；若已核对账号且聊天页可用，可点击“人工确认登录”。' if evidence['status']=='unknown' else ''))
 
     async def confirm_manual_login(self, eid, inp):
+        self.require_arena(eid)
         context = self.require_context(eid)
         if not inp.confirmed or inp.email.strip().lower()!=self.account_for(eid)['login_email'].strip().lower():
             raise HTTPException(400, '请明确确认当前浏览器已登录所选账号')
@@ -560,7 +602,8 @@ class Manager:
     async def stop(self, eid):
         async with self.lock:
             self.get(eid)
-            await pelican.stop(eid)
+            if self.account_for(eid)['platform'] == 'arena':
+                await pelican.stop(eid)
             watcher = self.auth_watch_jobs.pop(eid, None)
             if watcher:
                 watcher.cancel()
@@ -579,7 +622,8 @@ class Manager:
                     self.errors[eid] = str(exc)[:1000]
                     raise HTTPException(500, '关闭失败：' + str(exc)[:500])
                 self.contexts.pop(eid, None)
-            pelican.browser_closed(eid)
+            if self.account_for(eid)['platform'] == 'arena':
+                pelican.browser_closed(eid)
             browser = self.browsers.pop(eid, None)
             if browser:
                 await browser.close()
@@ -748,13 +792,19 @@ async def accounts():
 @app.post('/api/accounts', status_code=201)
 async def account_create(inp: AccountInput):
     async with manager.lock:
-        email, cipher = manager.credentials(inp)
-        if not email or not cipher:
-            raise HTTPException(400, '新账号必须保存邮箱和密码')
+        if inp.platform == 'chatgpt':
+            if inp.login_email or inp.login_password:
+                raise HTTPException(400, 'ChatGPT 账号只保存名称和备注，请在浏览器中手动登录')
+            email, cipher = '', ''
+        else:
+            email, cipher = manager.credentials(inp)
+            if not email or not cipher:
+                raise HTTPException(400, '新账号必须保存邮箱和密码')
         aid = uuid.uuid4().hex
         with manager.db:
             manager.db.execute('INSERT INTO accounts VALUES (?,?,?,?,?,?)',
                 (aid, inp.name, inp.note, email, cipher, now()))
+            account_platforms.assign(manager.db, aid, inp.platform)
         return {'id': aid}
 
 
@@ -762,6 +812,14 @@ async def account_create(inp: AccountInput):
 async def account_update(aid: str, inp: AccountInput):
     async with manager.lock:
         old = manager.account(aid)
+        if 'platform' in inp.model_fields_set and inp.platform != old['platform']:
+            raise HTTPException(409, '账号平台不能更换，请新建账号以隔离浏览器资料')
+        if old['platform'] == 'chatgpt':
+            if inp.login_email or inp.login_password:
+                raise HTTPException(400, 'ChatGPT 账号只保存名称和备注')
+            with manager.db:
+                manager.db.execute('UPDATE accounts SET name=?,note=? WHERE id=?', (inp.name, inp.note, aid))
+            return {'ok': True}
         linked = manager.db.execute('SELECT id FROM environments WHERE account_id=?', (aid,)).fetchall()
         active = any(r['id'] in manager.contexts or manager.states.get(r['id']) in ('starting', 'running', 'stopping') for r in linked)
         if active:
@@ -789,6 +847,7 @@ async def account_delete(aid: str):
         if manager.db.execute('SELECT 1 FROM environments WHERE account_id=?', (aid,)).fetchone():
             raise HTTPException(409, '请先删除该账号关联的环境，防止产生失去账号的环境')
         with manager.db:
+            manager.db.execute('DELETE FROM account_platforms WHERE account_id=?', (aid,))
             manager.db.execute('DELETE FROM accounts WHERE id=?', (aid,))
         return {'ok': True}
 
@@ -821,12 +880,12 @@ async def update(eid: str, inp: EnvironmentInput):
             raise HTTPException(409, '临时环境正在丢弃，不可编辑')
         if eid in manager.contexts:
             raise HTTPException(409, '请关闭环境后再编辑')
-        manager.account(inp.account_id)
+        start_url = manager.environment_url(inp, manager.account(inp.account_id))
         if old['account_id'] and (old['account_id'] != inp.account_id or old['mode'] != inp.mode):
             raise HTTPException(409, '已有环境不能更换账号或类型；请新建环境，避免混用登录资料')
         with manager.db:
             manager.db.execute('UPDATE environments SET name=?,note=?,start_url=?,account_id=?,mode=? WHERE id=?',
-                (inp.name, inp.note, inp.start_url, inp.account_id, inp.mode, eid))
+                (inp.name, inp.note, start_url, inp.account_id, inp.mode, eid))
         return {'ok': True}
 
 
@@ -836,7 +895,8 @@ async def delete(eid: str):
         manager.get(eid)
         if eid in manager.contexts:
             raise HTTPException(409, '请先关闭环境')
-        await pelican.stop(eid)
+        if manager.account_for(eid)['platform'] == 'arena':
+            await pelican.stop(eid)
         # Delete only the new managed profile, after explicit UI confirmation.
         profile = DATA / 'session-profiles' / eid
         if profile.exists():
@@ -872,6 +932,7 @@ async def delete(eid: str):
 
 @app.put('/api/environments/{eid}/trace-inspector')
 async def configure_trace_inspector(eid: str, inp: TraceInspectorInput):
+    manager.require_arena(eid)
     async with manager.lock:
         item = manager.get(eid)
         try:
@@ -884,6 +945,7 @@ async def configure_trace_inspector(eid: str, inp: TraceInspectorInput):
 
 @app.put('/api/environments/{eid}/yescaptcha')
 async def configure_yescaptcha(eid: str, inp: YesCaptchaInput):
+    manager.require_arena(eid)
     async with manager.lock:
         item = manager.get(eid)
         try:
@@ -933,14 +995,33 @@ async def open_tab(eid: str):
         return {'ok': True}
 
 
+@app.post('/api/environments/{eid}/open-chatgpt')
+async def open_chatgpt(eid: str):
+    async with manager.lock:
+        if manager.account_for(eid)['platform'] != 'chatgpt':
+            raise HTTPException(400, '此环境不是 ChatGPT 环境')
+        context = manager.require_context(eid)
+        page = next((p for p in context.pages if urlparse(p.url).hostname == 'chatgpt.com'), None)
+        if page is None:
+            page = await context.new_page()
+            try:
+                await page.goto(account_platforms.CHATGPT_HOME, wait_until='domcontentloaded', timeout=20000)
+            except Exception:
+                raise HTTPException(502, 'ChatGPT 标签页已创建，请在浏览器中检查网络或刷新') from None
+        await page.bring_to_front()
+        return {'ok': True}
+
+
 @app.get('/api/environments/{eid}/pelican')
 async def task_status(eid: str):
+    manager.require_arena(eid)
     manager.get(eid)
     return pelican.snapshot(eid)
 
 
 @app.post('/api/environments/{eid}/pelican/start')
 async def task_start(eid: str, settings: TaskSettings):
+    manager.require_arena(eid)
     async with manager.lock:
         await manager.check_login(eid)
         return await pelican.start(eid, settings)
@@ -948,6 +1029,7 @@ async def task_start(eid: str, settings: TaskSettings):
 
 @app.post('/api/environments/{eid}/pelican/stop')
 async def task_stop(eid: str):
+    manager.require_arena(eid)
     manager.get(eid)
     await pelican.stop(eid)
     return pelican.snapshot(eid)
@@ -980,12 +1062,15 @@ async def file_probe_ui():return HTMLResponse(PROBE_PAGE,headers={'Cache-Control
 
 
 @app.get('/api/file-probe/pages')
-async def file_probe_pages(eid: str):return {'pages':file_probe.page_list(eid)}
+async def file_probe_pages(eid: str):
+    manager.require_arena(eid)
+    return {'pages':file_probe.page_list(eid)}
 
 
 def require_probe_idle(key):
     file_probe.get_page(key)
     eid=file_probe.pages[key][0]
+    manager.require_arena(eid)
     if pelican.snapshot(eid)['status'] in ('running','stopping'):
         raise HTTPException(409,'请先停止该环境的自动调度；探测不会代你停止任务')
 
@@ -1072,6 +1157,7 @@ async def record_open(rid: str):
     if parsed.path.rstrip('/') in ('','/agent') and not parsed.query:
         raise HTTPException(409,'未获取到具体对话地址；请在所属环境的历史列表查找')
     async with manager.lock:
+        manager.require_arena(record['environment_id'])
         context=manager.require_context(record['environment_id'])
         page=await context.new_page()
         try:
@@ -1084,6 +1170,7 @@ async def record_open(rid: str):
 
 @app.post('/api/environments/{eid}/open-arena')
 async def open_arena(eid: str):
+    manager.require_arena(eid)
     async with manager.lock:
         context=manager.require_context(eid)
         page=await context.new_page()

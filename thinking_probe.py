@@ -49,6 +49,8 @@ class ThinkingProbe:
     def list_pages(self):
         old={id(v[1]):key for key,v in self.pages.items()};new={};rows=[]
         for eid,context in list(self.manager.contexts.items()):
+            if hasattr(self.manager, 'account_for') and self.manager.account_for(eid).get('platform') == 'chatgpt':
+                continue
             for index,page in enumerate(list(context.pages)[-12:]):
                 if page.is_closed() or not allowed(page):continue
                 key=old.get(id(page),uuid.uuid4().hex);new[key]=(eid,page,context)
@@ -61,6 +63,8 @@ class ThinkingProbe:
         value=self.pages.get(key)
         if not value:raise HTTPException(404,'请选择仍然打开的任务页')
         eid,page,context=value
+        if hasattr(self.manager, 'require_arena'):
+            self.manager.require_arena(eid)
         if self.manager.contexts.get(eid) is not context or page.is_closed() or not allowed(page):
             raise HTTPException(409,'页面已关闭、换环境或离开 Agent；不读取该页面')
         return page
